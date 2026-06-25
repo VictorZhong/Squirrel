@@ -1,0 +1,509 @@
+import {
+  ActivityAction,
+  ActivityLogEntry,
+  Attachment,
+  Project,
+  SCHEMA_VERSION,
+  Task,
+  WorkspaceIndex,
+  WorkspaceState,
+} from "../domain/models/types";
+import { createTimestampSlug } from "../utils/id";
+import { createId } from "../utils/id";
+import {
+  parsePreferences,
+  parseProject,
+  parseTask,
+  parseWorkspace,
+  serializeJson,
+} from "../services/SerializationService";
+import {
+  WORKSPACE_STRUCTURE_PATHS,
+  createInitialWorkspaceState,
+} from "../services/WorkspaceService";
+import {
+  MarkdownExportFile,
+  generateMarkdownExports,
+} from "../services/MarkdownExportService";
+
+type Path = string[];
+
+export class LocalWorkspaceRepository {
+  private objectUrls = new Map<string, string>();
+
+  private constructor(private readonly root: FileSystemDirectoryHandle) {}
+
+  static isSupported(): boolean {
+    return typeof window !== "undefined" && typeof window.showDirectoryPicker === "function";
+  }
+
+  static async pickDirectory(): Promise<LocalWorkspaceRepository> {
+    if (!window.showDirectoryPicker) {
+      throw new Error("File System Access API is not available in this browser.");
+    }
+
+    const handle = await window.showDirectoryPicker({
+      id: "squirrel-workspace",
+      mode: "readwrite",
+      startIn: "documents",
+    });
+
+    return new LocalWorkspaceRepository(handle);
+  }
+
+  static fromDirectoryHandle(handle: FileSystemDirectoryHandle): LocalWorkspaceRepository {
+    return new LocalWorkspaceRepository(handle);
+  }
+
+  get name(): string {
+    return this.root.name;
+  }
+
+  get directoryHandle(): FileSystemDirectoryHandle {
+    return this.root;
+  }
+
+  async loadOrInitialize(): Promise<WorkspaceState> {
+    const hasWorkspace = await this.fileExists(["workspace.json"]);
+
+    if (!hasWorkspace) {
+      return this.initialize();
+    }
+
+    const state = await this.load();
+    await this.appendActivity("workspace.loaded", "workspace", state.workspace.id);
+    return state;
+  }
+
+  async initialize(): Promise<WorkspaceState> {
+    const state = createInitialWorkspaceState(this.root.name);
+
+    for (const path of WORKSPACE_STRUCTURE_PATHS) {
+      await this.ensureDirectoryPath(path.split("/"));
+    }
+
+    await this.writeJson(["workspace.json"], state.workspace);
+    await this.writeJson(["preferences.json"], state.preferences);
+    await this.writeJson([".gtd-lite", "schema-version.json"], {
+      schemaVersion: SCHEMA_VERSION,
+    });
+    await this.writeIndex(state);
+    await this.writeMarkdownExports(state);
+    await this.appendActivity("workspace.initialized", "workspace", state.workspace.id);
+
+    return state;
+  }
+
+  async load(): Promise<WorkspaceState> {
+    const workspace = parseWorkspace(await this.readJson(["workspace.json"]));
+    const preferences = parsePreferences(await this.readOptionalJson(["preferences.json"]));
+    const projects = await this.readProjects();
+    const tasks = await this.readTasks(projects);
+
+    return {
+      workspace,
+      preferences,
+      projects: projects.sort((a, b) => a.sortOrder - b.sortOrder),
+      tasks: tasks.sort((a, b) => a.sortOrder - b.sortOrder),
+    };
+  }
+
+  async saveProject(
+    project: Project,
+    state: WorkspaceState,
+    previous?: Project,
+  ): Promise<void> {
+    await this.ensureDirectoryPath(["projects", project.id, "tasks"]);
+    await this.ensureDirectoryPath(["projects", project.id, "attachments"]);
+    await this.writeJson(["projects", project.id, "project.json"], project);
+    await this.appendActivity(
+      previous ? "project.updated" : "project.created",
+      "project",
+      project.id,
+      { name: project.name },
+    );
+    await this.writeDerivedFiles(state);
+  }
+
+  async deleteProject(project: Project, state: WorkspaceState): Promise<void> {
+    await this.removeDirectory(["projects", project.id]);
+    await this.appendActivity("project.deleted", "project", project.id, {
+      name: project.name,
+    });
+    await this.writeDerivedFiles(state);
+  }
+
+  async savePreferences(state: WorkspaceState): Promise<void> {
+    await this.writeJson(["preferences.json"], state.preferences);
+    await this.appendActivity(
+      "workspace.preferencesUpdated",
+      "workspace",
+      state.workspace.id,
+    );
+  }
+
+  async saveTask(task: Task, state: WorkspaceState, previous?: Task): Promise<void> {
+    await this.writeTask(task, previous);
+    await this.appendTaskActivity(task, previous);
+    await this.writeDerivedFiles(state);
+  }
+
+  async saveTasks(
+    tasks: Task[],
+    state: WorkspaceState,
+    previousTasks: Map<string, Task>,
+  ): Promise<void> {
+    for (const task of tasks) {
+      await this.writeTask(task, previousTasks.get(task.id));
+      await this.appendTaskActivity(task, previousTasks.get(task.id));
+    }
+    await this.writeDerivedFiles(state);
+  }
+
+  async createAttachment(task: Task, file: File): Promise<Attachment> {
+    const timestamp = new Date().toISOString();
+    const fileName = createAttachmentFileName(file.name);
+    const relativePath = task.projectId
+      ? ["projects", task.projectId, "attachments", task.id, fileName]
+      : ["inbox", "attachments", task.id, fileName];
+    await this.ensureDirectoryPath(relativePath.slice(0, -1));
+    await this.writeFile(relativePath, file);
+
+    const attachment: Attachment = {
+      id: createId("att"),
+      type: file.type.startsWith("image/") ? "image" : "file",
+      fileName,
+      relativePath: relativePath.join("/"),
+      mimeType: file.type || undefined,
+      sizeBytes: file.size,
+      createdAt: timestamp,
+    };
+
+    await this.appendActivity("attachment.created", "attachment", attachment.id, {
+      taskId: task.id,
+      fileName,
+    });
+
+    return attachment;
+  }
+
+  async getAttachmentUrl(attachment: Attachment): Promise<string> {
+    const cached = this.objectUrls.get(attachment.relativePath);
+    if (cached) {
+      return cached;
+    }
+    const file = await this.readFile(attachment.relativePath.split("/"));
+    const url = URL.createObjectURL(file);
+    this.objectUrls.set(attachment.relativePath, url);
+    return url;
+  }
+
+  disposeObjectUrls(): void {
+    for (const url of this.objectUrls.values()) {
+      URL.revokeObjectURL(url);
+    }
+    this.objectUrls.clear();
+  }
+
+  private async readProjects(): Promise<Project[]> {
+    const projectsDir = await this.getDirectoryPath(["projects"], true);
+    if (!projectsDir) {
+      return [];
+    }
+
+    const projects: Project[] = [];
+    for await (const [, handle] of projectsDir.entries()) {
+      if (!isDirectoryHandle(handle)) {
+        continue;
+      }
+      try {
+        const project = parseProject(
+          await this.readJsonFromDirectory(handle, ["project.json"]),
+        );
+        projects.push(project);
+      } catch (error) {
+        console.warn("Skipping invalid project directory", handle.name, error);
+      }
+    }
+
+    return projects;
+  }
+
+  private async readTasks(projects: Project[]): Promise<Task[]> {
+    const tasks: Task[] = [];
+    const inbox = await this.getDirectoryPath(["inbox"], true);
+
+    if (inbox) {
+      for await (const [name, handle] of inbox.entries()) {
+        if (isFileHandle(handle) && name.endsWith(".json")) {
+          tasks.push(parseTask(await this.readJsonFromFileHandle(handle)));
+        }
+      }
+    }
+
+    for (const project of projects) {
+      const tasksDir = await this.getDirectoryPath(
+        ["projects", project.id, "tasks"],
+        true,
+      );
+      if (!tasksDir) {
+        continue;
+      }
+
+      for await (const [name, handle] of tasksDir.entries()) {
+        if (isFileHandle(handle) && name.endsWith(".json")) {
+          tasks.push(parseTask(await this.readJsonFromFileHandle(handle)));
+        }
+      }
+    }
+
+    return tasks;
+  }
+
+  private async writeTask(task: Task, previous?: Task): Promise<void> {
+    const previousPath = previous ? this.taskPath(previous) : undefined;
+    const nextPath = this.taskPath(task);
+
+    await this.ensureDirectoryPath(nextPath.slice(0, -1));
+    await this.writeJson(nextPath, task);
+
+    if (previousPath && previousPath.join("/") !== nextPath.join("/")) {
+      await this.removeFile(previousPath);
+    }
+  }
+
+  private async appendTaskActivity(task: Task, previous?: Task): Promise<void> {
+    let action: ActivityAction = previous ? "task.updated" : "task.created";
+    const payload: Record<string, unknown> = { title: task.title };
+
+    if (previous && previous.status !== task.status) {
+      action = "task.statusChanged";
+      payload.from = previous.status;
+      payload.to = task.status;
+    }
+
+    await this.appendActivity(action, "task", task.id, payload);
+  }
+
+  private taskPath(task: Task): Path {
+    return task.projectId
+      ? ["projects", task.projectId, "tasks", `${task.id}.json`]
+      : ["inbox", `${task.id}.json`];
+  }
+
+  private async writeDerivedFiles(state: WorkspaceState): Promise<void> {
+    await this.writeIndex(state);
+    if (state.preferences.markdownExportEnabled) {
+      await this.writeMarkdownExports(state);
+    }
+  }
+
+  private async writeIndex(state: WorkspaceState): Promise<void> {
+    const index: WorkspaceIndex = {
+      schemaVersion: SCHEMA_VERSION,
+      generatedAt: new Date().toISOString(),
+      projects: state.projects.map((project) => ({
+        id: project.id,
+        name: project.name,
+        status: project.status,
+        taskCount: state.tasks.filter((task) => task.projectId === project.id).length,
+        updatedAt: project.updatedAt,
+      })),
+      tasks: state.tasks.map((task) => ({
+        id: task.id,
+        projectId: task.projectId,
+        parentTaskId: task.parentTaskId,
+        title: task.title,
+        status: task.status,
+        priority: task.priority,
+        importance: task.importance,
+        dueDate: task.dueDate,
+        createdAt: task.createdAt,
+        updatedAt: task.updatedAt,
+      })),
+    };
+
+    await this.writeJson([".gtd-lite", "index.json"], index);
+    await this.appendActivity("index.rebuilt", "index", state.workspace.id);
+  }
+
+  private async writeMarkdownExports(state: WorkspaceState): Promise<void> {
+    const exports = generateMarkdownExports(state.tasks, state.projects);
+    await Promise.all(exports.map((file) => this.writeMarkdownExport(file)));
+    await this.appendActivity("markdown.exported", "workspace", state.workspace.id);
+  }
+
+  private async writeMarkdownExport(file: MarkdownExportFile): Promise<void> {
+    await this.ensureDirectoryPath(file.path.slice(0, -1));
+    await this.writeFile(file.path, file.content);
+  }
+
+  private async appendActivity(
+    action: ActivityAction,
+    entityType: ActivityLogEntry["entityType"],
+    entityId: string,
+    payload?: Record<string, unknown>,
+  ): Promise<void> {
+    const entry: ActivityLogEntry = {
+      id: createId("log"),
+      action,
+      entityType,
+      entityId,
+      createdAt: new Date().toISOString(),
+      payload,
+    };
+    const path = [".gtd-lite", "activity-log.jsonl"];
+    const file = await this.getFileHandle(path, true);
+    const size = (await file.getFile()).size;
+    const writable = await file.createWritable({ keepExistingData: true });
+    await writable.seek(size);
+    await writable.write(`${JSON.stringify(entry)}\n`);
+    await writable.close();
+  }
+
+  private async fileExists(path: Path): Promise<boolean> {
+    try {
+      await this.getFileHandle(path, false);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async readJson(path: Path): Promise<unknown> {
+    const text = await this.readText(path);
+    return JSON.parse(text);
+  }
+
+  private async readOptionalJson(path: Path): Promise<unknown | undefined> {
+    const text = await this.readOptionalText(path);
+    return text ? JSON.parse(text) : undefined;
+  }
+
+  private async readJsonFromDirectory(
+    directory: FileSystemDirectoryHandle,
+    path: Path,
+  ): Promise<unknown> {
+    const file = await this.getFileHandleFromDirectory(directory, path, false);
+    return this.readJsonFromFileHandle(file);
+  }
+
+  private async readJsonFromFileHandle(fileHandle: FileSystemFileHandle): Promise<unknown> {
+    return JSON.parse(await (await fileHandle.getFile()).text());
+  }
+
+  private async readText(path: Path): Promise<string> {
+    return (await this.readFile(path)).text();
+  }
+
+  private async readOptionalText(path: Path): Promise<string | undefined> {
+    try {
+      return await this.readText(path);
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async readFile(path: Path): Promise<File> {
+    return (await this.getFileHandle(path, false)).getFile();
+  }
+
+  private async writeJson(path: Path, value: unknown): Promise<void> {
+    await this.writeFile(path, serializeJson(value));
+  }
+
+  private async writeFile(path: Path, value: Blob | string): Promise<void> {
+    const file = await this.getFileHandle(path, true);
+    const writable = await file.createWritable();
+    await writable.write(value);
+    await writable.close();
+  }
+
+  private async removeFile(path: Path): Promise<void> {
+    const directory = await this.getDirectoryPath(path.slice(0, -1), false);
+    if (!directory) {
+      return;
+    }
+    try {
+      await directory.removeEntry(path[path.length - 1]);
+    } catch {
+      // A stale previous path is harmless; the current task file is already written.
+    }
+  }
+
+  private async removeDirectory(path: Path): Promise<void> {
+    const directory = await this.getDirectoryPath(path.slice(0, -1), false);
+    if (!directory) {
+      return;
+    }
+    await directory.removeEntry(path[path.length - 1], { recursive: true });
+  }
+
+  private async getFileHandle(
+    path: Path,
+    create: boolean,
+  ): Promise<FileSystemFileHandle> {
+    return this.getFileHandleFromDirectory(this.root, path, create);
+  }
+
+  private async getFileHandleFromDirectory(
+    directory: FileSystemDirectoryHandle,
+    path: Path,
+    create: boolean,
+  ): Promise<FileSystemFileHandle> {
+    const parent = await this.getDirectoryHandleFromDirectory(
+      directory,
+      path.slice(0, -1),
+      create,
+    );
+    return parent.getFileHandle(path[path.length - 1], { create });
+  }
+
+  private async ensureDirectoryPath(path: Path): Promise<FileSystemDirectoryHandle> {
+    return this.getDirectoryHandleFromDirectory(this.root, path, true);
+  }
+
+  private async getDirectoryPath(
+    path: Path,
+    optional: boolean,
+  ): Promise<FileSystemDirectoryHandle | undefined> {
+    try {
+      return await this.getDirectoryHandleFromDirectory(this.root, path, false);
+    } catch (error) {
+      if (optional) {
+        return undefined;
+      }
+      throw error;
+    }
+  }
+
+  private async getDirectoryHandleFromDirectory(
+    directory: FileSystemDirectoryHandle,
+    path: Path,
+    create: boolean,
+  ): Promise<FileSystemDirectoryHandle> {
+    let current = directory;
+    for (const part of path) {
+      current = await current.getDirectoryHandle(part, { create });
+    }
+    return current;
+  }
+}
+
+function createAttachmentFileName(originalName: string): string {
+  const safeOriginal = originalName
+    .trim()
+    .replaceAll("\\", "_")
+    .replaceAll("/", "_")
+    .replace(/[^\w.\-]+/g, "_");
+
+  return `${createTimestampSlug()}_${safeOriginal || "attachment"}`;
+}
+
+function isDirectoryHandle(handle: FileSystemHandle): handle is FileSystemDirectoryHandle {
+  return handle.kind === "directory";
+}
+
+function isFileHandle(handle: FileSystemHandle): handle is FileSystemFileHandle {
+  return handle.kind === "file";
+}
