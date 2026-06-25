@@ -12,7 +12,9 @@ describe("WorkspaceService", () => {
     expect(state.workspace.name).toBe("Work");
     expect(state.workspace.schemaVersion).toBe(1);
     expect(state.preferences.defaultView).toBe("dashboard");
-    expect(state.projects).toEqual([]);
+    expect(state.projects).toHaveLength(1);
+    expect(state.projects[0].name).toBe("Default");
+    expect(state.preferences.defaultProjectId).toBe(state.projects[0].id);
     expect(state.tasks).toEqual([]);
   });
 

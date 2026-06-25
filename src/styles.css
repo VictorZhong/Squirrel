@@ -98,6 +98,24 @@ textarea {
   line-height: 1.55;
 }
 
+.local-data-highlight {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.local-data-highlight svg {
+  margin-top: 1px;
+}
+
 .recent-workspace-list,
 .settings-recent-list {
   display: grid;
@@ -281,6 +299,108 @@ textarea {
   color: var(--sidebar-muted);
 }
 
+.project-nav {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.project-nav-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px 8px 12px;
+  color: #d0d5da;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.project-nav-heading .ant-btn {
+  color: var(--sidebar-muted);
+}
+
+.project-nav-list {
+  display: grid;
+  gap: 4px;
+}
+
+.project-nav-item-wrap {
+  min-height: 40px;
+}
+
+.project-nav-item {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
+  min-height: 40px;
+  border-radius: 8px;
+  color: var(--sidebar-muted);
+}
+
+.project-nav-collapsed .project-nav-item {
+  grid-template-columns: 18px minmax(0, 1fr);
+  min-height: 42px;
+}
+
+.project-nav-item-selected {
+  background: rgba(249, 115, 22, 0.22);
+  color: #ffffff;
+}
+
+.project-nav-item:hover {
+  color: #ffffff;
+}
+
+.project-nav-select {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.project-nav-collapsed .project-nav-select {
+  grid-template-columns: 18px;
+  justify-content: center;
+}
+
+.project-nav-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-drag-handle {
+  display: grid;
+  height: 32px;
+  place-items: center;
+  color: rgba(154, 163, 172, 0.72);
+  cursor: grab;
+}
+
+.project-drag-handle:active {
+  cursor: grabbing;
+}
+
+.project-nav-item-dragging {
+  opacity: 0.55;
+}
+
+.project-nav .project-menu-actions {
+  display: inline-flex;
+  padding-right: 4px;
+}
+
 .app-content {
   min-width: 0;
   padding: 24px;
@@ -395,7 +515,8 @@ textarea {
 
 .task-lane,
 .project-overview,
-.completion-panel {
+.completion-panel,
+.support-view {
   padding: 18px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -429,29 +550,6 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-.task-row-button {
-  display: grid;
-  height: auto;
-  min-height: 54px;
-  justify-content: stretch;
-  padding: 10px 12px;
-  border-color: var(--line);
-  text-align: left;
-}
-
-.task-row-button > span {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.task-row-button small {
-  overflow: hidden;
-  color: var(--text-muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .project-grid {
@@ -564,14 +662,18 @@ textarea {
   color: var(--text);
   text-align: left;
   box-shadow: 0 8px 18px rgba(21, 23, 26, 0.05);
-  cursor: grab;
+  cursor: pointer;
 }
 
 .task-card:hover {
   border-color: var(--line-strong);
 }
 
-.task-card:active {
+.kanban-column .task-card {
+  cursor: grab;
+}
+
+.kanban-column .task-card:active {
   cursor: grabbing;
 }
 
@@ -587,12 +689,12 @@ textarea {
   text-overflow: ellipsis;
 }
 
-.task-card-meta {
-  overflow: hidden;
-  color: var(--text-muted);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.task-card-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 22px;
+  align-items: center;
 }
 
 .priority-badge {
@@ -621,6 +723,14 @@ textarea {
 .priority-urgent {
   background: #ffe1dc;
   color: #b42318;
+}
+
+.importance-marks {
+  color: var(--danger);
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0;
 }
 
 .task-card-subtasks {
@@ -660,14 +770,6 @@ textarea {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-}
-
-.importance-marks {
-  color: var(--danger);
-  font-size: 16px;
-  font-weight: 800;
-  line-height: 1;
-  letter-spacing: 0;
 }
 
 .status-inbox {
@@ -826,7 +928,7 @@ textarea {
 
 .subtask-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 32px;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
   min-height: 38px;
@@ -837,6 +939,16 @@ textarea {
 
 .subtask-row .ant-checkbox-wrapper {
   min-width: 0;
+}
+
+.subtask-actions {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.drawer-saving-text {
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 .empty-line {
@@ -927,6 +1039,41 @@ textarea {
 
 .settings-row span {
   color: var(--text-muted);
+}
+
+.settings-field {
+  display: grid;
+  gap: 6px;
+}
+
+.settings-field > span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.app-footer {
+  display: flex;
+  justify-content: center;
+  margin-top: 28px;
+  padding: 18px 0 4px;
+}
+
+.app-footer button {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.app-footer button:hover {
+  color: var(--accent-strong);
+}
+
+.support-view {
+  max-width: 720px;
 }
 
 .heatmap-shell {
@@ -1138,4 +1285,5 @@ textarea {
     grid-template-columns: 1fr;
     gap: 12px;
   }
+
 }

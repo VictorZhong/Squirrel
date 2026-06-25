@@ -17,10 +17,10 @@ npm start
 Then open:
 
 ```text
-http://127.0.0.1:5173/
+http://127.0.0.1:6670/
 ```
 
-Use Chrome or Microsoft Edge. Squirrel uses the File System Access API, so it should be opened from `localhost` or `127.0.0.1`.
+Use Chrome or Microsoft Edge. Squirrel uses the File System Access API, so it should be opened from `localhost`, `127.0.0.1`, or an HTTPS route when deployed.
 
 ## Workspace Data
 

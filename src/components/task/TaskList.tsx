@@ -48,7 +48,14 @@ export function TaskList({ tasks, projects, onOpenTask }: TaskListProps) {
       dataIndex: "dueDate",
       key: "dueDate",
       width: 130,
-      render: (dueDate?: string) => dueDate ?? "None",
+      render: (dueDate?: string) => dueDate ?? "-",
+    },
+    {
+      title: "Assignee",
+      dataIndex: "assignee",
+      key: "assignee",
+      width: 140,
+      render: (assignee?: string) => assignee ?? "-",
     },
     {
       title: "Created",
@@ -62,14 +69,16 @@ export function TaskList({ tasks, projects, onOpenTask }: TaskListProps) {
       dataIndex: "priority",
       key: "priority",
       width: 130,
-      render: (priority: Task["priority"]) => priorityLabel[priority],
+      render: (priority: Task["priority"]) =>
+        priority === "none" ? "-" : priorityLabel[priority],
     },
     {
       title: "Importance",
       dataIndex: "importance",
       key: "importance",
       width: 140,
-      render: (importance: Task["importance"]) => importanceLabel[importance],
+      render: (importance: Task["importance"]) =>
+        importance === "none" ? "-" : importanceLabel[importance],
     },
     {
       key: "action",

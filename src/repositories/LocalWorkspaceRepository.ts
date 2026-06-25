@@ -84,11 +84,16 @@ export class LocalWorkspaceRepository {
 
     await this.writeJson(["workspace.json"], state.workspace);
     await this.writeJson(["preferences.json"], state.preferences);
+    for (const project of state.projects) {
+      await this.ensureDirectoryPath(["projects", project.id, "tasks"]);
+      await this.ensureDirectoryPath(["projects", project.id, "attachments"]);
+      await this.writeJson(["projects", project.id, "project.json"], project);
+    }
     await this.writeJson([".gtd-lite", "schema-version.json"], {
       schemaVersion: SCHEMA_VERSION,
     });
-    await this.writeIndex(state);
-    await this.writeMarkdownExports(state);
+    await this.writeIndexFile(state);
+    await this.writeMarkdownExportFiles(state);
     await this.appendActivity("workspace.initialized", "workspace", state.workspace.id);
 
     return state;
@@ -133,6 +138,24 @@ export class LocalWorkspaceRepository {
     await this.writeDerivedFiles(state);
   }
 
+  async saveProjects(
+    projects: Project[],
+    state: WorkspaceState,
+    previousProjects: Map<string, Project>,
+  ): Promise<void> {
+    for (const project of projects) {
+      await this.ensureDirectoryPath(["projects", project.id, "tasks"]);
+      await this.ensureDirectoryPath(["projects", project.id, "attachments"]);
+      await this.writeJson(["projects", project.id, "project.json"], project);
+      await this.appendActivity("project.updated", "project", project.id, {
+        name: project.name,
+        fromSortOrder: previousProjects.get(project.id)?.sortOrder,
+        toSortOrder: project.sortOrder,
+      });
+    }
+    await this.writeDerivedFiles(state);
+  }
+
   async savePreferences(state: WorkspaceState): Promise<void> {
     await this.writeJson(["preferences.json"], state.preferences);
     await this.appendActivity(
@@ -153,9 +176,26 @@ export class LocalWorkspaceRepository {
     state: WorkspaceState,
     previousTasks: Map<string, Task>,
   ): Promise<void> {
+    await Promise.all(
+      tasks.map((task) => this.writeTask(task, previousTasks.get(task.id))),
+    );
     for (const task of tasks) {
-      await this.writeTask(task, previousTasks.get(task.id));
       await this.appendTaskActivity(task, previousTasks.get(task.id));
+    }
+    await this.writeDerivedFiles(state);
+  }
+
+  async deleteTasks(tasks: Task[], state: WorkspaceState): Promise<void> {
+    for (const task of tasks) {
+      await this.removeFile(this.taskPath(task));
+      await Promise.all(
+        task.attachments.map((attachment) =>
+          this.removeFile(attachment.relativePath.split("/")),
+        ),
+      );
+      await this.appendActivity("task.deleted", "task", task.id, {
+        title: task.title,
+      });
     }
     await this.writeDerivedFiles(state);
   }
@@ -292,13 +332,18 @@ export class LocalWorkspaceRepository {
   }
 
   private async writeDerivedFiles(state: WorkspaceState): Promise<void> {
-    await this.writeIndex(state);
+    const writes = [this.writeIndexFile(state)];
     if (state.preferences.markdownExportEnabled) {
-      await this.writeMarkdownExports(state);
+      writes.push(this.writeMarkdownExportFiles(state));
+    }
+    await Promise.all(writes);
+    await this.appendActivity("index.rebuilt", "index", state.workspace.id);
+    if (state.preferences.markdownExportEnabled) {
+      await this.appendActivity("markdown.exported", "workspace", state.workspace.id);
     }
   }
 
-  private async writeIndex(state: WorkspaceState): Promise<void> {
+  private async writeIndexFile(state: WorkspaceState): Promise<void> {
     const index: WorkspaceIndex = {
       schemaVersion: SCHEMA_VERSION,
       generatedAt: new Date().toISOString(),
@@ -314,6 +359,7 @@ export class LocalWorkspaceRepository {
         projectId: task.projectId,
         parentTaskId: task.parentTaskId,
         title: task.title,
+        assignee: task.assignee,
         status: task.status,
         priority: task.priority,
         importance: task.importance,
@@ -324,13 +370,11 @@ export class LocalWorkspaceRepository {
     };
 
     await this.writeJson([".gtd-lite", "index.json"], index);
-    await this.appendActivity("index.rebuilt", "index", state.workspace.id);
   }
 
-  private async writeMarkdownExports(state: WorkspaceState): Promise<void> {
+  private async writeMarkdownExportFiles(state: WorkspaceState): Promise<void> {
     const exports = generateMarkdownExports(state.tasks, state.projects);
     await Promise.all(exports.map((file) => this.writeMarkdownExport(file)));
-    await this.appendActivity("markdown.exported", "workspace", state.workspace.id);
   }
 
   private async writeMarkdownExport(file: MarkdownExportFile): Promise<void> {
@@ -432,11 +476,15 @@ export class LocalWorkspaceRepository {
   }
 
   private async removeDirectory(path: Path): Promise<void> {
-    const directory = await this.getDirectoryPath(path.slice(0, -1), false);
+    const directory = await this.getDirectoryPath(path.slice(0, -1), true);
     if (!directory) {
       return;
     }
-    await directory.removeEntry(path[path.length - 1], { recursive: true });
+    try {
+      await directory.removeEntry(path[path.length - 1], { recursive: true });
+    } catch {
+      // Missing generated directories should not block deleting the owning entity.
+    }
   }
 
   private async getFileHandle(

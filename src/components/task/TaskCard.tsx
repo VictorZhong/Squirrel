@@ -1,5 +1,5 @@
 import { Checkbox, Tag } from "antd";
-import { CalendarDays, Paperclip } from "lucide-react";
+import { CalendarDays, Paperclip, UserRound } from "lucide-react";
 import { Task, priorityLabel } from "../../domain/models/types";
 import { statusClassName } from "../../utils/taskDisplay";
 
@@ -24,6 +24,9 @@ export function TaskCard({
 }: TaskCardProps) {
   const completedSubtasks = subtasks.filter((subtask) => subtask.status === "done").length;
   const importanceMarks = "!".repeat(importanceWeight(task.importance));
+  const showAssignee =
+    Boolean(task.assignee) && (task.status === "waiting" || task.status === "blocked");
+  const hasFooterBadges = showAssignee || task.attachments.length > 0 || subtasks.length > 0;
 
   return (
     <article
@@ -37,11 +40,23 @@ export function TaskCard({
       {...dragHandleProps}
     >
       <span className="task-card-title">{task.title}</span>
-      {task.priority !== "none" ? (
-        <Tag className={`priority-badge priority-${task.priority}`}>
-          {priorityLabel[task.priority]}
-        </Tag>
-      ) : null}
+      <span className="task-card-meta-row">
+        {task.dueDate ? (
+          <Tag variant="filled" icon={<CalendarDays size={12} />}>
+            {formatCardDate(task.dueDate)}
+          </Tag>
+        ) : null}
+        {task.priority !== "none" ? (
+          <Tag className={`priority-badge priority-${task.priority}`}>
+            {priorityLabel[task.priority]}
+          </Tag>
+        ) : null}
+        {importanceMarks ? (
+          <span className="importance-marks" aria-label={`${task.importance} importance`}>
+            {importanceMarks}
+          </span>
+        ) : null}
+      </span>
       {subtasks.length > 0 ? (
         <div className="task-card-subtasks">
           {subtasks.slice(0, 5).map((subtask) => (
@@ -60,32 +75,37 @@ export function TaskCard({
           ))}
         </div>
       ) : null}
-      <span className="task-card-footer">
-        <span className="task-card-badges">
-          {task.dueDate ? (
-            <Tag variant="filled" icon={<CalendarDays size={12} />}>
-              {task.dueDate}
-            </Tag>
-          ) : null}
-          {task.attachments.length > 0 ? (
-            <Tag variant="filled" icon={<Paperclip size={12} />}>
-              {task.attachments.length}
-            </Tag>
-          ) : null}
-          {subtasks.length > 0 ? (
-            <Tag variant="filled">
-              {completedSubtasks}/{subtasks.length}
-            </Tag>
-          ) : null}
-        </span>
-        {importanceMarks ? (
-          <span className="importance-marks" aria-label={`${task.importance} importance`}>
-            {importanceMarks}
+      {hasFooterBadges ? (
+        <span className="task-card-footer">
+          <span className="task-card-badges">
+            {showAssignee ? (
+              <Tag variant="filled" icon={<UserRound size={12} />}>
+                {task.assignee}
+              </Tag>
+            ) : null}
+            {task.attachments.length > 0 ? (
+              <Tag variant="filled" icon={<Paperclip size={12} />}>
+                {task.attachments.length}
+              </Tag>
+            ) : null}
+            {subtasks.length > 0 ? (
+              <Tag variant="filled">
+                {completedSubtasks}/{subtasks.length}
+              </Tag>
+            ) : null}
           </span>
-        ) : null}
-      </span>
+        </span>
+      ) : null}
     </article>
   );
+}
+
+function formatCardDate(date: string): string {
+  const [, month, day] = date.split("-");
+  if (!month || !day) {
+    return date;
+  }
+  return `${Number(month)}/${Number(day)}`;
 }
 
 function importanceWeight(importance: Task["importance"]): number {

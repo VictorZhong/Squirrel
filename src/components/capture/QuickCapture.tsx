@@ -4,14 +4,12 @@ import { ImagePlus, Plus } from "lucide-react";
 
 interface QuickCaptureProps {
   disabled?: boolean;
-  scopeLabel?: string;
   onCreateTextTask: (title: string) => Promise<void>;
   onCreateAttachmentTask: (title: string | undefined, files: File[]) => Promise<void>;
 }
 
 export function QuickCapture({
   disabled,
-  scopeLabel,
   onCreateTextTask,
   onCreateAttachmentTask,
 }: QuickCaptureProps) {
@@ -91,7 +89,7 @@ export function QuickCapture({
         variant="borderless"
         value={value}
         disabled={disabled || isSaving}
-        placeholder={scopeLabel ? `New task in ${scopeLabel}` : "New task"}
+        placeholder="Type a task or paste an image"
         onChange={(event) => setValue(event.target.value)}
         onKeyDown={handleKeyDown}
       />

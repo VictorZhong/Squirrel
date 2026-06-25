@@ -35,7 +35,11 @@ export function parsePreferences(value: unknown): WorkspacePreferences {
 
   return {
     ...defaults,
-    ...value,
+    defaultView:
+      ["dashboard", "kanban", "list"].includes(String(value.defaultView))
+        ? (value.defaultView as WorkspacePreferences["defaultView"])
+        : defaults.defaultView,
+    defaultProjectId: optionalString(value.defaultProjectId),
     userProfile:
       isRecord(value.userProfile) && typeof value.userProfile.nickname === "string"
         ? {
@@ -53,6 +57,18 @@ export function parsePreferences(value: unknown): WorkspacePreferences {
           ),
         )
       : defaults.boardColumns,
+    dueSoonDays: optionalNumber(value.dueSoonDays) ?? defaults.dueSoonDays,
+    autoArchiveDoneAfterDays:
+      optionalNumber(value.autoArchiveDoneAfterDays) ?? defaults.autoArchiveDoneAfterDays,
+    markdownExportEnabled:
+      typeof value.markdownExportEnabled === "boolean"
+        ? value.markdownExportEnabled
+        : defaults.markdownExportEnabled,
+    screenshotTaskDefaultProjectId: optionalString(value.screenshotTaskDefaultProjectId),
+    taskSortMode:
+      ["manual", "dueDate", "priority"].includes(String(value.taskSortMode))
+        ? (value.taskSortMode as WorkspacePreferences["taskSortMode"])
+        : defaults.taskSortMode,
   };
 }
 
@@ -82,6 +98,7 @@ export function parseTask(value: unknown): Task {
     parentTaskId: optionalString(record.parentTaskId),
     title: expectString(record.title, "task.title"),
     description: optionalString(record.description),
+    assignee: optionalString(record.assignee),
     status: TASK_STATUSES.includes(record.status as Task["status"])
       ? (record.status as Task["status"])
       : "inbox",

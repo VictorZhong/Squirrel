@@ -2,7 +2,7 @@ import { Button, Progress, Tag } from "antd";
 import { AlertCircle, CalendarClock, CirclePause, Inbox, TimerReset } from "lucide-react";
 import dayjs from "dayjs";
 import { DashboardSummary, Project, Task } from "../../domain/models/types";
-import { taskMetaText } from "../../utils/taskDisplay";
+import { TaskCard } from "../task/TaskCard";
 
 interface DashboardViewProps {
   dashboard: DashboardSummary;
@@ -10,6 +10,7 @@ interface DashboardViewProps {
   projects: Project[];
   onOpenTask: (task: Task) => void;
   onOpenProject: (projectId: string) => void;
+  onToggleSubtask: (task: Task, done: boolean) => Promise<void>;
   onOpenRoute: (
     route:
       | "overdue"
@@ -28,6 +29,7 @@ export function DashboardView({
   projects,
   onOpenTask,
   onOpenProject,
+  onToggleSubtask,
   onOpenRoute,
 }: DashboardViewProps) {
   const metrics = [
@@ -69,16 +71,26 @@ export function DashboardView({
       <CompletionHeatmap tasks={tasks} onOpenTimeline={() => onOpenRoute("timeline")} />
 
       <section className="dashboard-lanes">
-        <TaskLane title="Overdue Tasks" tasks={dashboard.overdue.tasks} onOpenTask={onOpenTask} />
+        <TaskLane
+          title="Overdue Tasks"
+          tasks={dashboard.overdue.tasks}
+          allTasks={tasks}
+          onOpenTask={onOpenTask}
+          onToggleSubtask={onToggleSubtask}
+        />
         <TaskLane
           title="Due This Week"
           tasks={[...dashboard.dueToday.tasks, ...dashboard.dueSoon.tasks]}
+          allTasks={tasks}
           onOpenTask={onOpenTask}
+          onToggleSubtask={onToggleSubtask}
         />
         <TaskLane
           title="Blocked / Waiting"
           tasks={[...dashboard.blocked.tasks, ...dashboard.waiting.tasks]}
+          allTasks={tasks}
           onOpenTask={onOpenTask}
+          onToggleSubtask={onToggleSubtask}
         />
       </section>
 
@@ -179,8 +191,6 @@ function buildCompletionWeeks(tasks: Task[]) {
     counts.set(date, (counts.get(date) ?? 0) + 1);
   }
 
-  const maxCount = Math.max(1, ...counts.values());
-
   return Array.from({ length: 13 }, (_, weekIndex) =>
     Array.from({ length: 7 }, (_, dayIndex) => {
       const day = start.add(weekIndex * 7 + dayIndex, "day");
@@ -190,24 +200,23 @@ function buildCompletionWeeks(tasks: Task[]) {
         date,
         count,
         isFuture: day.isAfter(today),
-        level: completionLevel(count, maxCount),
+        level: completionLevel(count),
       };
     }),
   );
 }
 
-function completionLevel(count: number, maxCount: number): number {
+function completionLevel(count: number): number {
   if (count === 0) {
     return 0;
   }
-  const ratio = count / maxCount;
-  if (ratio >= 0.75) {
+  if (count >= 7) {
     return 4;
   }
-  if (ratio >= 0.5) {
+  if (count >= 4) {
     return 3;
   }
-  if (ratio >= 0.25) {
+  if (count >= 2) {
     return 2;
   }
   return 1;
@@ -216,11 +225,15 @@ function completionLevel(count: number, maxCount: number): number {
 function TaskLane({
   title,
   tasks,
+  allTasks,
   onOpenTask,
+  onToggleSubtask,
 }: {
   title: string;
   tasks: Task[];
+  allTasks: Task[];
   onOpenTask: (task: Task) => void;
+  onToggleSubtask: (task: Task, done: boolean) => Promise<void>;
 }) {
   return (
     <section className="task-lane">
@@ -230,10 +243,13 @@ function TaskLane({
       </div>
       <div className="task-lane-list">
         {tasks.slice(0, 6).map((task) => (
-          <Button key={task.id} className="task-row-button" onClick={() => onOpenTask(task)}>
-            <span>{task.title}</span>
-            <small>{taskMetaText(task)}</small>
-          </Button>
+          <TaskCard
+            key={task.id}
+            task={task}
+            subtasks={allTasks.filter((item) => item.parentTaskId === task.id)}
+            onOpen={onOpenTask}
+            onToggleSubtask={onToggleSubtask}
+          />
         ))}
         {tasks.length === 0 ? <span className="empty-line">No tasks</span> : null}
       </div>

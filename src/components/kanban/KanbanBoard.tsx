@@ -1,6 +1,8 @@
 import {
   DndContext,
   DragEndEvent,
+  DragOverlay,
+  DragStartEvent,
   PointerSensor,
   closestCorners,
   useSensor,
@@ -14,6 +16,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { useDroppable } from "@dnd-kit/core";
 import { Empty } from "antd";
+import { useState } from "react";
 import {
   BOARD_STATUSES,
   BoardTaskStatus,
@@ -43,27 +46,44 @@ export function KanbanBoard({
       activationConstraint: { distance: 6 },
     }),
   );
+  const [activeTask, setActiveTask] = useState<Task>();
+
+  function handleDragStart(event: DragStartEvent) {
+    setActiveTask(tasks.find((task) => task.id === String(event.active.id)));
+  }
 
   async function handleDragEnd(event: DragEndEvent) {
     const activeId = String(event.active.id);
     const overId = event.over ? String(event.over.id) : undefined;
     if (!overId || activeId === overId) {
+      setActiveTask(undefined);
       return;
     }
 
     const changed = reorderTasks(tasks, activeId, overId);
     if (changed.length === 0) {
+      setActiveTask(undefined);
       return;
     }
 
     const previousTasks = new Map(
       changed.map((task) => [task.id, allTasks.find((item) => item.id === task.id)!]),
     );
-    await onTasksChange(changed, previousTasks);
+    try {
+      await onTasksChange(changed, previousTasks);
+    } finally {
+      setActiveTask(undefined);
+    }
   }
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCorners}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onDragCancel={() => setActiveTask(undefined)}
+    >
       <div className="kanban-board">
         {BOARD_STATUSES.map((status) => {
           const columnTasks = tasks
@@ -81,6 +101,17 @@ export function KanbanBoard({
           );
         })}
       </div>
+      <DragOverlay>
+        {activeTask ? (
+          <TaskCard
+            task={activeTask}
+            subtasks={allTasks.filter((item) => item.parentTaskId === activeTask.id)}
+            onOpen={() => undefined}
+            onToggleSubtask={() => undefined}
+            style={{ cursor: "grabbing" }}
+          />
+        ) : null}
+      </DragOverlay>
     </DndContext>
   );
 }

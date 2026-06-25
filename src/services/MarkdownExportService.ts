@@ -78,6 +78,7 @@ function renderTaskLine(task: Task): string {
   const done = task.status === "done" ? "x" : " ";
   const meta = [
     task.dueDate ? `Due: ${task.dueDate}` : undefined,
+    task.assignee ? `Assignee: ${task.assignee}` : undefined,
     task.priority !== "none" ? `Priority: ${task.priority}` : undefined,
     task.importance !== "none" ? `Importance: ${task.importance}` : undefined,
     task.tags.length > 0 ? `Tags: ${task.tags.join(", ")}` : undefined,

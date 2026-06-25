@@ -5,6 +5,7 @@ import {
   WorkspacePreferences,
   WorkspaceState,
 } from "../domain/models/types";
+import { createProject } from "../domain/rules/taskRules";
 import { createId } from "../utils/id";
 
 export const WORKSPACE_STRUCTURE_PATHS = [
@@ -51,10 +52,15 @@ export function createInitialWorkspaceState(
   name?: string,
   now = new Date(),
 ): WorkspaceState {
+  const defaultProject = createProject({ name: "Default", sortOrder: 0 }, now);
+
   return {
     workspace: createDefaultWorkspace(name, now),
-    preferences: createDefaultPreferences(),
-    projects: [],
+    preferences: {
+      ...createDefaultPreferences(),
+      defaultProjectId: defaultProject.id,
+    },
+    projects: [defaultProject],
     tasks: [],
   };
 }

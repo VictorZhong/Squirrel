@@ -6,7 +6,9 @@ import {
   Drawer,
   Image,
   Input,
+  Popconfirm,
   Select,
+  Space,
   Typography,
 } from "antd";
 import dayjs from "dayjs";
@@ -15,6 +17,7 @@ import {
   Paperclip,
   Save,
   Split,
+  Trash2,
   Upload,
   X,
 } from "lucide-react";
@@ -44,6 +47,7 @@ interface TaskDrawerProps {
   onRegisterTags: (tags: string[]) => Promise<void>;
   onCreateSubtask: (parent: Task, title: string) => Promise<void>;
   onPromoteSubtask: (task: Task) => Promise<void>;
+  onDeleteTask: (task: Task) => Promise<boolean>;
 }
 
 export function TaskDrawer({
@@ -59,6 +63,7 @@ export function TaskDrawer({
   onRegisterTags,
   onCreateSubtask,
   onPromoteSubtask,
+  onDeleteTask,
 }: TaskDrawerProps) {
   const [draft, setDraft] = useState<Task | undefined>(task);
   const [subtaskTitle, setSubtaskTitle] = useState("");
@@ -128,14 +133,30 @@ export function TaskDrawer({
       closeIcon={<X size={18} />}
       title="Task"
       extra={
-        <Button
-          type="primary"
-          icon={<Save size={16} />}
-          loading={isSaving}
-          onClick={() => void save()}
-        >
-          Save
-        </Button>
+        <Space>
+          {isSaving ? (
+            <Typography.Text className="drawer-saving-text">Saving...</Typography.Text>
+          ) : null}
+          <Popconfirm
+            title="Delete task?"
+            description="This deletes the task and its subtasks permanently."
+            okText="Delete"
+            okButtonProps={{ danger: true }}
+            onConfirm={() => void onDeleteTask(currentTask)}
+          >
+            <Button danger icon={<Trash2 size={16} />} disabled={isSaving}>
+              Delete
+            </Button>
+          </Popconfirm>
+          <Button
+            type="primary"
+            icon={<Save size={16} />}
+            loading={isSaving}
+            onClick={() => void save()}
+          >
+            {isSaving ? "Saving" : "Save"}
+          </Button>
+        </Space>
       }
     >
       <div className="drawer-stack">
@@ -172,17 +193,20 @@ export function TaskDrawer({
               onChange={(projectId) =>
                 update({
                   projectId,
-                  status: projectId
-                    ? draft.status === "inbox"
-                      ? "todo"
-                      : draft.status
-                    : "inbox",
+                  status: projectId ? draft.status : "inbox",
                 })
               }
               options={activeProjects.map((project) => ({
                 value: project.id,
                 label: project.name,
               }))}
+            />
+          </Field>
+          <Field label="Assignee">
+            <Input
+              value={draft.assignee}
+              placeholder="Optional"
+              onChange={(event) => update({ assignee: event.target.value || undefined })}
             />
           </Field>
           <Field label="Due">
@@ -302,11 +326,22 @@ export function TaskDrawer({
                   >
                     {subtask.title}
                   </Checkbox>
-                  <Button
-                    type="text"
-                    icon={<Split size={15} />}
-                    onClick={() => void onPromoteSubtask(subtask)}
-                  />
+                  <div className="subtask-actions">
+                    <Button
+                      type="text"
+                      icon={<Split size={15} />}
+                      onClick={() => void onPromoteSubtask(subtask)}
+                    />
+                    <Popconfirm
+                      title="Delete subtask?"
+                      description="This deletes the subtask permanently."
+                      okText="Delete"
+                      okButtonProps={{ danger: true }}
+                      onConfirm={() => void onDeleteTask(subtask)}
+                    >
+                      <Button type="text" danger icon={<Trash2 size={15} />} />
+                    </Popconfirm>
+                  </div>
                 </div>
               ))}
             </div>

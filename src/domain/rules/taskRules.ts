@@ -14,6 +14,7 @@ export interface CreateTaskInput {
   title: string;
   projectId?: string;
   parentTaskId?: string;
+  assignee?: string;
   status?: TaskStatus;
   priority?: TaskPriority;
   importance?: TaskImportance;
@@ -40,6 +41,7 @@ export function createTask(input: CreateTaskInput, now = new Date()): Task {
     parentTaskId: input.parentTaskId,
     title: input.title.trim(),
     description: input.description?.trim() || undefined,
+    assignee: input.assignee?.trim() || undefined,
     status,
     priority: input.priority ?? "none",
     importance: input.importance ?? "none",

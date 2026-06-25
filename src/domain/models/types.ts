@@ -68,6 +68,7 @@ export interface Task {
   parentTaskId?: string;
   title: string;
   description?: string;
+  assignee?: string;
   status: TaskStatus;
   priority: TaskPriority;
   importance: TaskImportance;
@@ -154,6 +155,7 @@ export interface TaskIndexItem {
   projectId?: string;
   parentTaskId?: string;
   title: string;
+  assignee?: string;
   status: TaskStatus;
   priority: TaskPriority;
   importance: TaskImportance;
