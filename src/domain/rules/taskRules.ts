@@ -9,6 +9,7 @@ import {
 } from "../models/types";
 import { formatDateTimeForTitle } from "./dateRules";
 import { createId } from "../../utils/id";
+import { randomProjectColor } from "../models/projectColors";
 
 export interface CreateTaskInput {
   title: string;
@@ -66,7 +67,7 @@ export function createProject(input: CreateProjectInput, now = new Date()): Proj
     name: input.name.trim(),
     description: input.description?.trim() || undefined,
     status: input.status ?? "active",
-    color: input.color,
+    color: input.color ?? randomProjectColor(),
     sortOrder: input.sortOrder ?? Date.now(),
     createdAt: timestamp,
     updatedAt: timestamp,

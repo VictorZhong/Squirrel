@@ -25,7 +25,7 @@ import {
   statusLabel,
 } from "../../domain/models/types";
 import { applyTaskStatus } from "../../domain/rules/taskRules";
-import { getTaskProjectName } from "../../utils/projectDisplay";
+import { getTaskProjectColor, getTaskProjectName } from "../../utils/projectDisplay";
 import { TaskCard } from "../task/TaskCard";
 
 interface KanbanBoardProps {
@@ -49,6 +49,10 @@ export function KanbanBoard({
 }: KanbanBoardProps) {
   const projectNames = useMemo(
     () => new Map(projects.map((project) => [project.id, project.name])),
+    [projects],
+  );
+  const projectsById = useMemo(
+    () => new Map(projects.map((project) => [project.id, project])),
     [projects],
   );
   const sensors = useSensors(
@@ -106,6 +110,7 @@ export function KanbanBoard({
               tasks={columnTasks}
               allTasks={allTasks}
               projectNames={projectNames}
+              projectsById={projectsById}
               showProjectName={showProjectName}
               onOpenTask={onOpenTask}
               onToggleSubtask={onToggleSubtask}
@@ -118,6 +123,7 @@ export function KanbanBoard({
           <TaskCard
             task={activeTask}
             projectName={getTaskProjectName(activeTask, projectNames)}
+            projectColor={getTaskProjectColor(activeTask, projectsById)}
             showProjectName={showProjectName}
             subtasks={allTasks.filter((item) => item.parentTaskId === activeTask.id)}
             onOpen={() => undefined}
@@ -135,6 +141,7 @@ function KanbanColumn({
   tasks,
   allTasks,
   projectNames,
+  projectsById,
   showProjectName,
   onOpenTask,
   onToggleSubtask,
@@ -143,6 +150,7 @@ function KanbanColumn({
   tasks: Task[];
   allTasks: Task[];
   projectNames: ReadonlyMap<string, string>;
+  projectsById: ReadonlyMap<string, Project>;
   showProjectName: boolean;
   onOpenTask: (task: Task) => void;
   onToggleSubtask: (task: Task, done: boolean) => Promise<void>;
@@ -162,6 +170,7 @@ function KanbanColumn({
               key={task.id}
               task={task}
               projectName={getTaskProjectName(task, projectNames)}
+              projectColor={getTaskProjectColor(task, projectsById)}
               showProjectName={showProjectName}
               subtasks={allTasks.filter((item) => item.parentTaskId === task.id)}
               onOpen={onOpenTask}
@@ -178,6 +187,7 @@ function KanbanColumn({
 function SortableTaskCard({
   task,
   projectName,
+  projectColor,
   showProjectName,
   subtasks,
   onOpen,
@@ -185,6 +195,7 @@ function SortableTaskCard({
 }: {
   task: Task;
   projectName: string;
+  projectColor: string;
   showProjectName: boolean;
   subtasks: Task[];
   onOpen: (task: Task) => void;
@@ -204,6 +215,7 @@ function SortableTaskCard({
       <TaskCard
         task={task}
         projectName={projectName}
+        projectColor={projectColor}
         showProjectName={showProjectName}
         subtasks={subtasks}
         onOpen={onOpen}

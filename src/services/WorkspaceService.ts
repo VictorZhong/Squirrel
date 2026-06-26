@@ -7,6 +7,7 @@ import {
 } from "../domain/models/types";
 import { createProject } from "../domain/rules/taskRules";
 import { createId } from "../utils/id";
+import { randomProjectColor } from "../domain/models/projectColors";
 
 export const WORKSPACE_STRUCTURE_PATHS = [
   "projects",
@@ -53,7 +54,11 @@ export function createInitialWorkspaceState(
   name?: string,
   now = new Date(),
 ): WorkspaceState {
-  const defaultProject = createProject({ name: "Default", sortOrder: 0 }, now);
+  const defaultProject = createProject({
+    name: "Default",
+    color: randomProjectColor(),
+    sortOrder: 0,
+  }, now);
 
   return {
     workspace: createDefaultWorkspace(name, now),

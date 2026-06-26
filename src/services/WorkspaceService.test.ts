@@ -4,6 +4,7 @@ import {
   createDefaultPreferences,
   createInitialWorkspaceState,
 } from "./WorkspaceService";
+import { PROJECT_COLOR_VALUES } from "../domain/models/projectColors";
 
 describe("WorkspaceService", () => {
   it("creates the v0.1 workspace defaults", () => {
@@ -14,6 +15,7 @@ describe("WorkspaceService", () => {
     expect(state.preferences.defaultView).toBe("dashboard");
     expect(state.projects).toHaveLength(1);
     expect(state.projects[0].name).toBe("Default");
+    expect(PROJECT_COLOR_VALUES).toContain(state.projects[0].color);
     expect(state.preferences.defaultProjectId).toBe(state.projects[0].id);
     expect(state.tasks).toEqual([]);
   });

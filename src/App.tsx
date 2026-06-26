@@ -54,6 +54,11 @@ import {
   TimerReset,
 } from "lucide-react";
 import { appConfig } from "./config/appConfig";
+import {
+  PROJECT_COLOR_OPTIONS,
+  randomProjectColor,
+  resolveProjectColor,
+} from "./domain/models/projectColors";
 import { SquirrelIcon } from "./components/brand/SquirrelIcon";
 import { QuickCapture } from "./components/capture/QuickCapture";
 import { DashboardView } from "./components/dashboard/DashboardView";
@@ -120,7 +125,11 @@ export default function App() {
   const [selectedTaskId, setSelectedTaskId] = useState<string>();
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [editingProjectId, setEditingProjectId] = useState<string>();
-  const [projectDraft, setProjectDraft] = useState({ name: "", description: "" });
+  const [projectDraft, setProjectDraft] = useState(() => ({
+    name: "",
+    description: "",
+    color: randomProjectColor(),
+  }));
   const [isOpening, setIsOpening] = useState(false);
   const [, setAppPreferences] = useState(loadAppPreferences);
   const [recentWorkspaces, setRecentWorkspaces] = useState<RecentWorkspace[]>([]);
@@ -576,7 +585,7 @@ export default function App() {
 
   function openCreateProjectModal() {
     setEditingProjectId(undefined);
-    setProjectDraft({ name: "", description: "" });
+    setProjectDraft({ name: "", description: "", color: randomProjectColor() });
     setProjectModalOpen(true);
   }
 
@@ -585,6 +594,7 @@ export default function App() {
     setProjectDraft({
       name: project.name,
       description: project.description ?? "",
+      color: resolveProjectColor(project),
     });
     setProjectModalOpen(true);
   }
@@ -608,11 +618,13 @@ export default function App() {
           ...previous,
           name: nextProjectName,
           description: projectDraft.description.trim() || undefined,
+          color: projectDraft.color,
           updatedAt: new Date().toISOString(),
         }
       : createProject({
           name: nextProjectName,
           description: projectDraft.description.trim() || undefined,
+          color: projectDraft.color,
           sortOrder: state.projects.length,
         });
 
@@ -636,7 +648,7 @@ export default function App() {
       if (!previous && !state.preferences.defaultProjectId) {
         await repository.savePreferences(nextState);
       }
-      setProjectDraft({ name: "", description: "" });
+      setProjectDraft({ name: "", description: "", color: randomProjectColor() });
       setEditingProjectId(undefined);
       setProjectModalOpen(false);
       setRoute(`project:${project.id}`);
@@ -887,6 +899,26 @@ export default function App() {
               }))
             }
           />
+          <div className="project-color-field">
+            <span>Color</span>
+            <div className="project-color-grid">
+              {PROJECT_COLOR_OPTIONS.map((color) => (
+                <button
+                  type="button"
+                  key={color.value}
+                  className={`project-color-swatch ${
+                    projectDraft.color === color.value ? "project-color-swatch-selected" : ""
+                  }`}
+                  style={{ backgroundColor: color.value }}
+                  title={color.label}
+                  aria-label={color.label}
+                  onClick={() =>
+                    setProjectDraft((draft) => ({ ...draft, color: color.value }))
+                  }
+                />
+              ))}
+            </div>
+          </div>
         </div>
       </Modal>
     </Layout>

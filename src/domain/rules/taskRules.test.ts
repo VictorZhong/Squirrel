@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { applyTaskStatus, createTask, promoteSubtask } from "./taskRules";
+import { PROJECT_COLOR_VALUES } from "../models/projectColors";
+import { applyTaskStatus, createProject, createTask, promoteSubtask } from "./taskRules";
 
 describe("taskRules", () => {
   it("sets completedAt when a task moves to done", () => {
@@ -28,5 +29,11 @@ describe("taskRules", () => {
     });
 
     expect(promoteSubtask(subtask).parentTaskId).toBeUndefined();
+  });
+
+  it("assigns a preset color to new projects", () => {
+    const project = createProject({ name: "New project" });
+
+    expect(PROJECT_COLOR_VALUES).toContain(project.color);
   });
 });
