@@ -44,6 +44,7 @@ interface TaskDrawerProps {
   onClose: () => void;
   onSave: (task: Task, options?: { notify?: boolean }) => Promise<boolean>;
   onAttachFiles: (task: Task, files: File[]) => Promise<Task>;
+  onDeleteAttachment: (task: Task, attachment: Attachment) => Promise<Task>;
   onRegisterTags: (tags: string[]) => Promise<void>;
   onCreateSubtask: (parent: Task, title: string) => Promise<void>;
   onPromoteSubtask: (task: Task) => Promise<void>;
@@ -60,6 +61,7 @@ export function TaskDrawer({
   onClose,
   onSave,
   onAttachFiles,
+  onDeleteAttachment,
   onRegisterTags,
   onCreateSubtask,
   onPromoteSubtask,
@@ -280,6 +282,16 @@ export function TaskDrawer({
           <AttachmentList
             attachments={draft.attachments}
             resolveAttachmentUrl={resolveAttachmentUrl}
+            onDeleteAttachment={async (attachment) => {
+              setIsSaving(true);
+              try {
+                const updated = await onDeleteAttachment(currentTask, attachment);
+                setDraft(updated);
+              } finally {
+                setIsSaving(false);
+              }
+            }}
+            disabled={isSaving}
           />
         </section>
 
@@ -370,9 +382,13 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function AttachmentList({
   attachments,
   resolveAttachmentUrl,
+  onDeleteAttachment,
+  disabled,
 }: {
   attachments: Attachment[];
   resolveAttachmentUrl: (attachment: Attachment) => Promise<string>;
+  onDeleteAttachment: (attachment: Attachment) => Promise<void>;
+  disabled: boolean;
 }) {
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [previewUrl, setPreviewUrl] = useState<string>();
@@ -401,33 +417,52 @@ function AttachmentList({
   return (
     <div className="attachment-grid">
       {attachments.map((attachment) => (
-        <button
-          type="button"
+        <div
           key={attachment.id}
           className="attachment-item"
-          onClick={() => {
-            const url = urls[attachment.id];
-            if (!url) {
-              return;
-            }
-            if (attachment.type === "image") {
-              setPreviewUrl(url);
-              return;
-            }
-            const opened = window.open(url, "_blank");
-            if (!opened) {
-              downloadAttachment(url, attachment.fileName);
-            }
-          }}
         >
-          {attachment.type === "image" && urls[attachment.id] ? (
-            <img src={urls[attachment.id]} alt={attachment.fileName} />
-          ) : (
-            <Paperclip size={22} />
-          )}
-          <span>{attachment.fileName}</span>
-          <Paperclip size={14} />
-        </button>
+          <button
+            type="button"
+            className="attachment-open-button"
+            disabled={disabled}
+            onClick={() => {
+              const url = urls[attachment.id];
+              if (!url) {
+                return;
+              }
+              if (attachment.type === "image") {
+                setPreviewUrl(url);
+                return;
+              }
+              const opened = window.open(url, "_blank");
+              if (!opened) {
+                downloadAttachment(url, attachment.fileName);
+              }
+            }}
+          >
+            {attachment.type === "image" && urls[attachment.id] ? (
+              <img src={urls[attachment.id]} alt={attachment.fileName} />
+            ) : (
+              <Paperclip size={22} />
+            )}
+            <span>{attachment.fileName}</span>
+          </button>
+          <Popconfirm
+            title="Delete attachment?"
+            description="This removes the attachment file permanently."
+            okText="Delete"
+            okButtonProps={{ danger: true }}
+            onConfirm={() => void onDeleteAttachment(attachment)}
+          >
+            <Button
+              type="text"
+              danger
+              size="small"
+              disabled={disabled}
+              icon={<Trash2 size={14} />}
+            />
+          </Popconfirm>
+        </div>
       ))}
       <Image
         className="hidden-preview-image"

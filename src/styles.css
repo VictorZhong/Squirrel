@@ -904,7 +904,7 @@ textarea {
 
 .attachment-item {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) 16px;
+  grid-template-columns: minmax(0, 1fr) 28px;
   gap: 8px;
   align-items: center;
   min-height: 50px;
@@ -915,11 +915,29 @@ textarea {
   color: var(--text);
   text-decoration: none;
   text-align: left;
-  cursor: pointer;
 }
 
 .attachment-item:hover {
   border-color: var(--line-strong);
+}
+
+.attachment-open-button {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.attachment-open-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
 }
 
 .attachment-item img {
@@ -929,7 +947,7 @@ textarea {
   object-fit: cover;
 }
 
-.attachment-item span {
+.attachment-open-button span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -404,6 +404,37 @@ export default function App() {
     return updatedTask;
   }
 
+  async function handleDeleteAttachment(task: Task, attachment: Attachment): Promise<Task> {
+    if (!repository || !state) {
+      return task;
+    }
+    if (!task.attachments.some((item) => item.id === attachment.id)) {
+      return task;
+    }
+
+    const previous = state.tasks.find((item) => item.id === task.id) ?? task;
+    const updatedTask = {
+      ...task,
+      attachments: task.attachments.filter((item) => item.id !== attachment.id),
+      updatedAt: new Date().toISOString(),
+    };
+    const nextState = {
+      ...state,
+      tasks: state.tasks.map((item) => (item.id === updatedTask.id ? updatedTask : item)),
+    };
+    setState(nextState);
+
+    try {
+      await repository.deleteAttachment(updatedTask, previous, attachment, nextState);
+      void message.success("Attachment deleted");
+      return updatedTask;
+    } catch (error) {
+      setState(state);
+      void message.error(error instanceof Error ? error.message : "Failed to delete attachment");
+      return task;
+    }
+  }
+
   async function handleCreateSubtask(parent: Task, title: string) {
     if (!state) {
       return;
@@ -862,6 +893,7 @@ export default function App() {
         onClose={() => setSelectedTaskId(undefined)}
         onSave={handleSaveTask}
         onAttachFiles={handleAttachFiles}
+        onDeleteAttachment={handleDeleteAttachment}
         onRegisterTags={handleRegisterTags}
         onCreateSubtask={handleCreateSubtask}
         onPromoteSubtask={handlePromoteSubtask}

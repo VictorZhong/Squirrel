@@ -227,6 +227,27 @@ export class LocalWorkspaceRepository {
     return attachment;
   }
 
+  async deleteAttachment(
+    task: Task,
+    previous: Task,
+    attachment: Attachment,
+    state: WorkspaceState,
+  ): Promise<void> {
+    await this.writeTask(task, previous);
+    await this.removeFile(attachment.relativePath.split("/"));
+    const cached = this.objectUrls.get(attachment.relativePath);
+    if (cached) {
+      URL.revokeObjectURL(cached);
+      this.objectUrls.delete(attachment.relativePath);
+    }
+    await this.appendTaskActivity(task, previous);
+    await this.appendActivity("attachment.deleted", "attachment", attachment.id, {
+      taskId: task.id,
+      fileName: attachment.fileName,
+    });
+    await this.writeDerivedFiles(state);
+  }
+
   async getAttachmentUrl(attachment: Attachment): Promise<string> {
     const cached = this.objectUrls.get(attachment.relativePath);
     if (cached) {

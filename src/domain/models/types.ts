@@ -131,6 +131,7 @@ export type ActivityAction =
   | "task.statusChanged"
   | "task.deleted"
   | "attachment.created"
+  | "attachment.deleted"
   | "index.rebuilt"
   | "markdown.exported";
 
