@@ -94,6 +94,7 @@ export interface WorkspacePreferences {
   dueSoonDays: number;
   autoArchiveDoneAfterDays: number;
   markdownExportEnabled: boolean;
+  showProjectNameOnBoard: boolean;
   screenshotTaskDefaultProjectId?: string;
   taskSortMode: TaskSortMode;
   userProfile: UserProfile;

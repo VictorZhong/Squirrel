@@ -29,6 +29,10 @@ describe("WorkspaceService", () => {
     expect(createDefaultPreferences().markdownExportEnabled).toBe(true);
   });
 
+  it("shows project names on board cards by default", () => {
+    expect(createDefaultPreferences().showProjectNameOnBoard).toBe(true);
+  });
+
   it("creates profile and tag defaults", () => {
     const preferences = createDefaultPreferences();
 

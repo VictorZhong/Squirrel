@@ -16,19 +16,23 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { useDroppable } from "@dnd-kit/core";
 import { Empty } from "antd";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   BOARD_STATUSES,
   BoardTaskStatus,
+  Project,
   Task,
   statusLabel,
 } from "../../domain/models/types";
 import { applyTaskStatus } from "../../domain/rules/taskRules";
+import { getTaskProjectName } from "../../utils/projectDisplay";
 import { TaskCard } from "../task/TaskCard";
 
 interface KanbanBoardProps {
   tasks: Task[];
   allTasks: Task[];
+  projects: Project[];
+  showProjectName: boolean;
   onOpenTask: (task: Task) => void;
   onToggleSubtask: (task: Task, done: boolean) => Promise<void>;
   onTasksChange: (tasks: Task[], previousTasks: Map<string, Task>) => Promise<void>;
@@ -37,10 +41,16 @@ interface KanbanBoardProps {
 export function KanbanBoard({
   tasks,
   allTasks,
+  projects,
+  showProjectName,
   onOpenTask,
   onToggleSubtask,
   onTasksChange,
 }: KanbanBoardProps) {
+  const projectNames = useMemo(
+    () => new Map(projects.map((project) => [project.id, project.name])),
+    [projects],
+  );
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 6 },
@@ -95,6 +105,8 @@ export function KanbanBoard({
               status={status}
               tasks={columnTasks}
               allTasks={allTasks}
+              projectNames={projectNames}
+              showProjectName={showProjectName}
               onOpenTask={onOpenTask}
               onToggleSubtask={onToggleSubtask}
             />
@@ -105,6 +117,8 @@ export function KanbanBoard({
         {activeTask ? (
           <TaskCard
             task={activeTask}
+            projectName={getTaskProjectName(activeTask, projectNames)}
+            showProjectName={showProjectName}
             subtasks={allTasks.filter((item) => item.parentTaskId === activeTask.id)}
             onOpen={() => undefined}
             onToggleSubtask={() => undefined}
@@ -120,12 +134,16 @@ function KanbanColumn({
   status,
   tasks,
   allTasks,
+  projectNames,
+  showProjectName,
   onOpenTask,
   onToggleSubtask,
 }: {
   status: BoardTaskStatus;
   tasks: Task[];
   allTasks: Task[];
+  projectNames: ReadonlyMap<string, string>;
+  showProjectName: boolean;
   onOpenTask: (task: Task) => void;
   onToggleSubtask: (task: Task, done: boolean) => Promise<void>;
 }) {
@@ -143,6 +161,8 @@ function KanbanColumn({
             <SortableTaskCard
               key={task.id}
               task={task}
+              projectName={getTaskProjectName(task, projectNames)}
+              showProjectName={showProjectName}
               subtasks={allTasks.filter((item) => item.parentTaskId === task.id)}
               onOpen={onOpenTask}
               onToggleSubtask={onToggleSubtask}
@@ -157,11 +177,15 @@ function KanbanColumn({
 
 function SortableTaskCard({
   task,
+  projectName,
+  showProjectName,
   subtasks,
   onOpen,
   onToggleSubtask,
 }: {
   task: Task;
+  projectName: string;
+  showProjectName: boolean;
   subtasks: Task[];
   onOpen: (task: Task) => void;
   onToggleSubtask: (task: Task, done: boolean) => Promise<void>;
@@ -179,6 +203,8 @@ function SortableTaskCard({
     <div ref={setNodeRef}>
       <TaskCard
         task={task}
+        projectName={projectName}
+        showProjectName={showProjectName}
         subtasks={subtasks}
         onOpen={onOpen}
         onToggleSubtask={(subtask, done) => void onToggleSubtask(subtask, done)}

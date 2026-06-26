@@ -64,6 +64,10 @@ export function parsePreferences(value: unknown): WorkspacePreferences {
       typeof value.markdownExportEnabled === "boolean"
         ? value.markdownExportEnabled
         : defaults.markdownExportEnabled,
+    showProjectNameOnBoard:
+      typeof value.showProjectNameOnBoard === "boolean"
+        ? value.showProjectNameOnBoard
+        : defaults.showProjectNameOnBoard,
     screenshotTaskDefaultProjectId: optionalString(value.screenshotTaskDefaultProjectId),
     taskSortMode:
       ["manual", "dueDate", "priority"].includes(String(value.taskSortMode))

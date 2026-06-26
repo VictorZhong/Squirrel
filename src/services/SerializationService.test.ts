@@ -36,5 +36,10 @@ describe("SerializationService", () => {
 
     expect(preferences.boardColumns).toContain("todo");
     expect(preferences.dueSoonDays).toBe(7);
+    expect(preferences.showProjectNameOnBoard).toBe(true);
+  });
+
+  it("parses the board project name preference", () => {
+    expect(parsePreferences({ showProjectNameOnBoard: false }).showProjectNameOnBoard).toBe(false);
   });
 });

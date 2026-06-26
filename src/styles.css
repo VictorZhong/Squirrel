@@ -515,8 +515,7 @@ textarea {
 
 .task-lane,
 .project-overview,
-.completion-panel,
-.support-view {
+.completion-panel {
   padding: 18px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -599,6 +598,15 @@ textarea {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.board-project-name-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .project-description {
@@ -687,6 +695,27 @@ textarea {
   font-weight: 650;
   line-height: 1.35;
   text-overflow: ellipsis;
+}
+
+.task-card-project-row {
+  display: flex;
+  min-width: 0;
+  max-width: none;
+  align-items: center;
+  margin: -1px -12px 2px;
+  padding: 0 12px 9px;
+  border-bottom: 1px solid var(--line);
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.task-card-project-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .task-card-meta-row {
@@ -1060,20 +1089,17 @@ textarea {
   padding: 18px 0 4px;
 }
 
-.app-footer button {
+.app-footer a {
   border: 0;
   background: transparent;
   color: var(--text-muted);
   font-size: 12px;
   cursor: pointer;
+  text-decoration: none;
 }
 
-.app-footer button:hover {
+.app-footer a:hover {
   color: var(--accent-strong);
-}
-
-.support-view {
-  max-width: 720px;
 }
 
 .heatmap-shell {

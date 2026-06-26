@@ -40,6 +40,7 @@ export function createDefaultPreferences(): WorkspacePreferences {
     dueSoonDays: 7,
     autoArchiveDoneAfterDays: 30,
     markdownExportEnabled: true,
+    showProjectNameOnBoard: true,
     taskSortMode: "manual",
     userProfile: {
       nickname: "Local user",

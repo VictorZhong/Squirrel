@@ -2,6 +2,7 @@ import { Button, Progress, Tag } from "antd";
 import { AlertCircle, CalendarClock, CirclePause, Inbox, TimerReset } from "lucide-react";
 import dayjs from "dayjs";
 import { DashboardSummary, Project, Task } from "../../domain/models/types";
+import { getTaskProjectName } from "../../utils/projectDisplay";
 import { TaskCard } from "../task/TaskCard";
 
 interface DashboardViewProps {
@@ -32,6 +33,7 @@ export function DashboardView({
   onToggleSubtask,
   onOpenRoute,
 }: DashboardViewProps) {
+  const projectNames = new Map(projects.map((project) => [project.id, project.name]));
   const metrics = [
     { label: "Overdue", value: dashboard.overdue.count, icon: AlertCircle, route: "overdue" },
     { label: "Due Today", value: dashboard.dueToday.count, icon: TimerReset, route: "today" },
@@ -75,6 +77,7 @@ export function DashboardView({
           title="Overdue Tasks"
           tasks={dashboard.overdue.tasks}
           allTasks={tasks}
+          projectNames={projectNames}
           onOpenTask={onOpenTask}
           onToggleSubtask={onToggleSubtask}
         />
@@ -82,6 +85,7 @@ export function DashboardView({
           title="Due This Week"
           tasks={[...dashboard.dueToday.tasks, ...dashboard.dueSoon.tasks]}
           allTasks={tasks}
+          projectNames={projectNames}
           onOpenTask={onOpenTask}
           onToggleSubtask={onToggleSubtask}
         />
@@ -89,6 +93,7 @@ export function DashboardView({
           title="Blocked / Waiting"
           tasks={[...dashboard.blocked.tasks, ...dashboard.waiting.tasks]}
           allTasks={tasks}
+          projectNames={projectNames}
           onOpenTask={onOpenTask}
           onToggleSubtask={onToggleSubtask}
         />
@@ -226,12 +231,14 @@ function TaskLane({
   title,
   tasks,
   allTasks,
+  projectNames,
   onOpenTask,
   onToggleSubtask,
 }: {
   title: string;
   tasks: Task[];
   allTasks: Task[];
+  projectNames: ReadonlyMap<string, string>;
   onOpenTask: (task: Task) => void;
   onToggleSubtask: (task: Task, done: boolean) => Promise<void>;
 }) {
@@ -246,6 +253,7 @@ function TaskLane({
           <TaskCard
             key={task.id}
             task={task}
+            projectName={getTaskProjectName(task, projectNames)}
             subtasks={allTasks.filter((item) => item.parentTaskId === task.id)}
             onOpen={onOpenTask}
             onToggleSubtask={onToggleSubtask}

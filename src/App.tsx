@@ -10,6 +10,7 @@ import {
   Segmented,
   Select,
   Space,
+  Switch,
   Tooltip,
   Typography,
   App as AntApp,
@@ -32,6 +33,7 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   AlertCircle,
   Blocks,
+  BookOpen,
   CalendarDays,
   CheckCircle2,
   Clock3,
@@ -51,6 +53,7 @@ import {
   Trash2,
   TimerReset,
 } from "lucide-react";
+import { appConfig } from "./config/appConfig";
 import { SquirrelIcon } from "./components/brand/SquirrelIcon";
 import { QuickCapture } from "./components/capture/QuickCapture";
 import { DashboardView } from "./components/dashboard/DashboardView";
@@ -103,7 +106,6 @@ type RouteKey =
   | "done"
   | "timeline"
   | "settings"
-  | "support"
   | `project:${string}`;
 
 type ViewMode = "board" | "list";
@@ -140,10 +142,7 @@ export default function App() {
     [route, state],
   );
   const pageTitle = state ? getRouteTitle(route, state.projects) : "Squirrel";
-  const pageSubtitle =
-    route === "settings" || route === "support"
-      ? state?.workspace.name
-      : `${pageTasks.length} tasks`;
+  const pageSubtitle = route === "settings" ? state?.workspace.name : `${pageTasks.length} tasks`;
   const boardCapable = isBoardCapableRoute(route);
 
   useEffect(() => {
@@ -299,7 +298,7 @@ export default function App() {
       title,
       projectId,
       status: "inbox",
-      sortOrder: nextSortOrder(state.tasks, "inbox", projectId),
+      sortOrder: firstSortOrder(state.tasks, "inbox", projectId),
     });
 
     const nextState = await persistTask(task);
@@ -318,7 +317,7 @@ export default function App() {
       title: title || createScreenshotTaskTitle(),
       projectId,
       status: "inbox",
-      sortOrder: nextSortOrder(state.tasks, "inbox", projectId),
+      sortOrder: firstSortOrder(state.tasks, "inbox", projectId),
     });
 
     const stateWithBase = await persistTask(baseTask);
@@ -482,23 +481,24 @@ export default function App() {
     }
   }
 
-  async function handleSaveDefaultProject(defaultProjectId?: string) {
+  async function handleSaveDefaultProject(defaultProjectId: string) {
     if (!state || !repository) {
       return;
     }
 
-    const nextDefaultProjectId =
-      defaultProjectId &&
-      state.projects.some(
-        (project) => project.id === defaultProjectId && project.status !== "archived",
-      )
-        ? defaultProjectId
-        : undefined;
+    const nextDefaultProject = state.projects.find(
+      (project) => project.id === defaultProjectId && project.status !== "archived",
+    );
+    if (!nextDefaultProject) {
+      void message.error("Choose an active project as the default");
+      return;
+    }
+
     const nextState = {
       ...state,
       preferences: {
         ...state.preferences,
-        defaultProjectId: nextDefaultProjectId,
+        defaultProjectId: nextDefaultProject.id,
       },
     };
     setState(nextState);
@@ -508,6 +508,29 @@ export default function App() {
     } catch (error) {
       setState(state);
       void message.error(error instanceof Error ? error.message : "Failed to save default project");
+    }
+  }
+
+  async function handleSaveShowProjectNameOnBoard(showProjectNameOnBoard: boolean) {
+    if (!state || !repository) {
+      return;
+    }
+
+    const nextState = {
+      ...state,
+      preferences: {
+        ...state.preferences,
+        showProjectNameOnBoard,
+      },
+    };
+    setState(nextState);
+    try {
+      await repository.savePreferences(nextState);
+    } catch (error) {
+      setState(state);
+      void message.error(
+        error instanceof Error ? error.message : "Failed to save board preference",
+      );
     }
   }
 
@@ -627,19 +650,14 @@ export default function App() {
     if (!repository || !state) {
       return;
     }
+    if (state.preferences.defaultProjectId === project.id) {
+      void message.warning("Default project cannot be deleted. Choose another default project first.");
+      return;
+    }
+
     const nextProjects = state.projects.filter((item) => item.id !== project.id);
-    const nextDefaultProjectId =
-      state.preferences.defaultProjectId === project.id
-        ? nextProjects
-            .filter((item) => item.status !== "archived")
-            .sort((a, b) => a.sortOrder - b.sortOrder)[0]?.id
-        : state.preferences.defaultProjectId;
     const nextState = {
       ...state,
-      preferences: {
-        ...state.preferences,
-        defaultProjectId: nextDefaultProjectId,
-      },
       projects: nextProjects,
       tasks: state.tasks.filter((task) => task.projectId !== project.id),
     };
@@ -655,9 +673,6 @@ export default function App() {
 
     try {
       await repository.deleteProject(project, nextState);
-      if (state.preferences.defaultProjectId !== nextDefaultProjectId) {
-        await repository.savePreferences(nextState);
-      }
     } catch (error) {
       setState(state);
       void message.error(error instanceof Error ? error.message : "Failed to delete project");
@@ -714,6 +729,7 @@ export default function App() {
         />
         <ProjectNav
           projects={state.projects}
+          defaultProjectId={state.preferences.defaultProjectId}
           selectedRoute={route}
           collapsed={sidebarCollapsed}
           onSelect={(project) => setRoute(`project:${project.id}`)}
@@ -760,8 +776,6 @@ export default function App() {
               onCreateTag={handleCreateTag}
               onDeleteTag={handleDeleteTag}
             />
-          ) : route === "support" ? (
-            <SupportView />
           ) : route === "timeline" ? (
             <TimelineView
               tasks={state.tasks}
@@ -782,6 +796,16 @@ export default function App() {
                       ]}
                     />
                   ) : null}
+                  {boardCapable && viewMode === "board" ? (
+                    <span className="board-project-name-toggle">
+                      <Switch
+                        size="small"
+                        checked={state.preferences.showProjectNameOnBoard}
+                        onChange={(checked) => void handleSaveShowProjectNameOnBoard(checked)}
+                      />
+                      <span>Project name</span>
+                    </span>
+                  ) : null}
                 </Space>
                 {selectedProject ? (
                   <span className="project-description">{selectedProject.description}</span>
@@ -793,6 +817,8 @@ export default function App() {
                 <KanbanBoard
                   tasks={pageTasks.filter((task) => !task.parentTaskId)}
                   allTasks={state.tasks}
+                  projects={state.projects}
+                  showProjectName={state.preferences.showProjectNameOnBoard}
                   onOpenTask={(task) => setSelectedTaskId(task.id)}
                   onToggleSubtask={handleToggleSubtask}
                   onTasksChange={persistTasks}
@@ -807,9 +833,9 @@ export default function App() {
             </section>
           )}
           <footer className="app-footer">
-            <button type="button" onClick={() => setRoute("support")}>
+            <a href={appConfig.userGuideUrl} target="_blank" rel="noreferrer">
               Supported by Squirrel team
-            </button>
+            </a>
           </footer>
         </Content>
       </Layout>
@@ -954,7 +980,7 @@ function SettingsView({
   onSwitchWorkspace: () => Promise<void>;
   onOpenRecentWorkspace: (workspace: RecentWorkspace) => Promise<void>;
   onSaveProfile: (nickname: string, avatarPresetId?: string) => Promise<void>;
-  onSaveDefaultProject: (defaultProjectId?: string) => Promise<void>;
+  onSaveDefaultProject: (defaultProjectId: string) => Promise<void>;
   onCreateTag: (tag: string) => Promise<void>;
   onDeleteTag: (tag: string) => Promise<void>;
 }) {
@@ -1067,9 +1093,8 @@ function SettingsView({
         <div className="settings-field">
           <span>Default project</span>
           <Select
-            allowClear
             value={state.preferences.defaultProjectId}
-            placeholder="Inbox"
+            placeholder="Select project"
             onChange={(projectId) => void onSaveDefaultProject(projectId)}
             options={state.projects
               .filter((project) => project.status !== "archived")
@@ -1117,29 +1142,27 @@ function SettingsView({
           </div>
         ) : null}
       </section>
-    </section>
-  );
-}
 
-function SupportView() {
-  return (
-    <section className="support-view">
-      <div className="section-heading">
-        <div>
-          <h2>Supported by Squirrel team</h2>
-          <span>Placeholder page</span>
+      <section className="settings-panel">
+        <div className="section-heading">
+          <h2>Help</h2>
         </div>
-      </div>
-      <Typography.Paragraph>
-        This page is reserved for support content, team links, release notes, or
-        contact information.
-      </Typography.Paragraph>
+        <Button
+          icon={<BookOpen size={16} />}
+          href={appConfig.userGuideUrl}
+          target="_blank"
+          rel="noreferrer"
+        >
+          User guide
+        </Button>
+      </section>
     </section>
   );
 }
 
 function ProjectNav({
   projects,
+  defaultProjectId,
   selectedRoute,
   collapsed,
   onSelect,
@@ -1149,6 +1172,7 @@ function ProjectNav({
   onReorderProjects,
 }: {
   projects: Project[];
+  defaultProjectId?: string;
   selectedRoute: RouteKey;
   collapsed: boolean;
   onSelect: (project: Project) => void;
@@ -1221,6 +1245,7 @@ function ProjectNav({
                 project={project}
                 selected={selectedRoute === `project:${project.id}`}
                 collapsed={collapsed}
+                isDefaultProject={project.id === defaultProjectId}
                 onSelect={onSelect}
                 onEdit={onEditProject}
                 onDelete={onDeleteProject}
@@ -1237,6 +1262,7 @@ function SortableProjectNavItem({
   project,
   selected,
   collapsed,
+  isDefaultProject,
   onSelect,
   onEdit,
   onDelete,
@@ -1244,6 +1270,7 @@ function SortableProjectNavItem({
   project: Project;
   selected: boolean;
   collapsed: boolean;
+  isDefaultProject: boolean;
   onSelect: (project: Project) => void;
   onEdit: (project: Project) => void;
   onDelete: (project: Project) => void;
@@ -1283,15 +1310,23 @@ function SortableProjectNavItem({
               icon={<Pencil size={13} />}
               onClick={() => onEdit(project)}
             />
-            <Popconfirm
-              title="Delete project permanently?"
-              description="This deletes the project and its tasks. It cannot be recovered."
-              okText="Delete"
-              okButtonProps={{ danger: true }}
-              onConfirm={() => onDelete(project)}
-            >
-              <Button type="text" size="small" icon={<Trash2 size={13} />} />
-            </Popconfirm>
+            {isDefaultProject ? (
+              <Tooltip title="Default project cannot be deleted. Choose another default project first.">
+                <span>
+                  <Button type="text" size="small" disabled icon={<Trash2 size={13} />} />
+                </span>
+              </Tooltip>
+            ) : (
+              <Popconfirm
+                title="Delete project permanently?"
+                description="This deletes the project and its tasks. It cannot be recovered."
+                okText="Delete"
+                okButtonProps={{ danger: true }}
+                onConfirm={() => onDelete(project)}
+              >
+                <Button type="text" size="small" icon={<Trash2 size={13} />} />
+              </Popconfirm>
+            )}
           </span>
         ) : null}
       </div>
@@ -1332,7 +1367,6 @@ function getRouteTitle(route: RouteKey, projects: Project[]): string {
     done: "Done",
     timeline: "Timeline",
     settings: "Settings",
-    support: "Support",
   };
 
   return titles[route as keyof typeof titles];
@@ -1375,7 +1409,6 @@ function getRouteTasks(route: RouteKey, state: WorkspaceState): Task[] {
     case "timeline":
       return tasks.filter((task) => task.status === "done");
     case "settings":
-    case "support":
       return [];
   }
 
@@ -1450,6 +1483,23 @@ function nextSortOrder(
   return siblings.length === 0
     ? 0
     : Math.max(...siblings.map((task) => task.sortOrder)) + 1;
+}
+
+function firstSortOrder(
+  tasks: Task[],
+  status: Task["status"],
+  projectId?: string,
+  parentTaskId?: string,
+): number {
+  const siblings = tasks.filter(
+    (task) =>
+      task.status === status &&
+      task.projectId === projectId &&
+      task.parentTaskId === parentTaskId,
+  );
+  return siblings.length === 0
+    ? 0
+    : Math.min(...siblings.map((task) => task.sortOrder)) - 1;
 }
 
 function mergeTags(existing: string[], incoming: string[]): string[] {

@@ -5,6 +5,8 @@ import { statusClassName } from "../../utils/taskDisplay";
 
 interface TaskCardProps {
   task: Task;
+  projectName: string;
+  showProjectName?: boolean;
   subtasks?: Task[];
   onOpen: (task: Task) => void;
   onToggleSubtask?: (task: Task, done: boolean) => void;
@@ -15,6 +17,8 @@ interface TaskCardProps {
 
 export function TaskCard({
   task,
+  projectName,
+  showProjectName = true,
   subtasks = [],
   onOpen,
   onToggleSubtask,
@@ -39,6 +43,11 @@ export function TaskCard({
       onClick={() => onOpen(task)}
       {...dragHandleProps}
     >
+      {showProjectName ? (
+        <span className="task-card-project-row" title={projectName}>
+          <span className="task-card-project-text">{projectName}</span>
+        </span>
+      ) : null}
       <span className="task-card-title">{task.title}</span>
       <span className="task-card-meta-row">
         {task.dueDate ? (
