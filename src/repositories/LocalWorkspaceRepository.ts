@@ -26,19 +26,49 @@ import {
   MarkdownExportFile,
   generateMarkdownExports,
 } from "../services/MarkdownExportService";
+import {
+  FolderWorkspaceRepository,
+  WorkspaceAttachmentFile,
+  WorkspaceRepository,
+  WorkspaceRepositorySupport,
+  WorkspaceStorageMode,
+} from "./WorkspaceRepository";
 
 type Path = string[];
+const BROWSER_WORKSPACE_PATH = ["squirrel-workspace", "default"] as const;
 
-export class LocalWorkspaceRepository {
+export class LocalWorkspaceRepository implements WorkspaceRepository {
   private objectUrls = new Map<string, string>();
 
-  private constructor(private readonly root: FileSystemDirectoryHandle) {}
+  private constructor(
+    private readonly root: FileSystemDirectoryHandle,
+    readonly storageMode: WorkspaceStorageMode,
+  ) {}
 
-  static isSupported(): boolean {
+  static getSupport(): WorkspaceRepositorySupport {
+    return {
+      folder: this.isFolderSupported(),
+      browser: this.isBrowserStorageSupported(),
+    };
+  }
+
+  static isFolderSupported(): boolean {
     return typeof window !== "undefined" && typeof window.showDirectoryPicker === "function";
   }
 
-  static async pickDirectory(): Promise<LocalWorkspaceRepository> {
+  static isBrowserStorageSupported(): boolean {
+    return (
+      typeof navigator !== "undefined" &&
+      typeof navigator.storage?.getDirectory === "function"
+    );
+  }
+
+  static isSupported(): boolean {
+    const support = this.getSupport();
+    return support.folder || support.browser;
+  }
+
+  static async pickDirectory(): Promise<FolderWorkspaceRepository> {
     if (!window.showDirectoryPicker) {
       throw new Error("File System Access API is not available in this browser.");
     }
@@ -49,11 +79,26 @@ export class LocalWorkspaceRepository {
       startIn: "documents",
     });
 
-    return new LocalWorkspaceRepository(handle);
+    return new LocalWorkspaceRepository(handle, "folder") as FolderWorkspaceRepository;
   }
 
-  static fromDirectoryHandle(handle: FileSystemDirectoryHandle): LocalWorkspaceRepository {
-    return new LocalWorkspaceRepository(handle);
+  static async openBrowserWorkspace(): Promise<LocalWorkspaceRepository> {
+    if (!LocalWorkspaceRepository.isBrowserStorageSupported()) {
+      throw new Error("Browser private workspace storage is not available.");
+    }
+
+    const root = await navigator.storage.getDirectory();
+    const workspaceRoot = await getDirectoryHandleFromDirectory(
+      root,
+      [...BROWSER_WORKSPACE_PATH],
+      true,
+    );
+    await assertWritableFileHandles(workspaceRoot);
+    return new LocalWorkspaceRepository(workspaceRoot, "browser");
+  }
+
+  static fromDirectoryHandle(handle: FileSystemDirectoryHandle): FolderWorkspaceRepository {
+    return new LocalWorkspaceRepository(handle, "folder") as FolderWorkspaceRepository;
   }
 
   get name(): string {
@@ -276,6 +321,39 @@ export class LocalWorkspaceRepository {
     return this.cacheObjectUrl(attachment.relativePath, file);
   }
 
+  async readAttachmentFile(attachment: Attachment): Promise<File> {
+    return this.readFile(attachment.relativePath.split("/"));
+  }
+
+  async replaceWorkspace(
+    state: WorkspaceState,
+    attachmentFiles: WorkspaceAttachmentFile[],
+  ): Promise<void> {
+    await this.clearWorkspace();
+    for (const path of WORKSPACE_STRUCTURE_PATHS) {
+      await this.ensureDirectoryPath(path.split("/"));
+    }
+    await this.writeJson(["workspace.json"], state.workspace);
+    await this.writeJson(["preferences.json"], state.preferences);
+    await this.writeJson([".gtd-lite", "schema-version.json"], {
+      schemaVersion: SCHEMA_VERSION,
+    });
+    for (const project of state.projects) {
+      await this.ensureDirectoryPath(["projects", project.id, "tasks"]);
+      await this.ensureDirectoryPath(["projects", project.id, "attachments"]);
+      await this.writeJson(["projects", project.id, "project.json"], project);
+    }
+    await Promise.all(state.tasks.map((task) => this.writeTask(task)));
+    for (const attachment of attachmentFiles) {
+      await this.ensureDirectoryPath(attachment.relativePath.split("/").slice(0, -1));
+      await this.writeFile(attachment.relativePath.split("/"), attachment.file);
+    }
+    await this.writeDerivedFiles(state);
+    await this.appendActivity("workspace.loaded", "workspace", state.workspace.id, {
+      source: "backup.imported",
+    });
+  }
+
   disposeObjectUrls(): void {
     for (const url of this.objectUrls.values()) {
       URL.revokeObjectURL(url);
@@ -456,6 +534,17 @@ export class LocalWorkspaceRepository {
     await this.writeFile(file.path, file.content);
   }
 
+  private async clearWorkspace(): Promise<void> {
+    this.disposeObjectUrls();
+    for await (const [name] of this.root.entries()) {
+      try {
+        await this.root.removeEntry(name, { recursive: true });
+      } catch {
+        // Best-effort cleanup lets import retry writes into a partly empty workspace.
+      }
+    }
+  }
+
   private async appendActivity(
     action: ActivityAction,
     entityType: ActivityLogEntry["entityType"],
@@ -604,12 +693,29 @@ export class LocalWorkspaceRepository {
     path: Path,
     create: boolean,
   ): Promise<FileSystemDirectoryHandle> {
-    let current = directory;
-    for (const part of path) {
-      current = await current.getDirectoryHandle(part, { create });
-    }
-    return current;
+    return getDirectoryHandleFromDirectory(directory, path, create);
   }
+}
+
+async function getDirectoryHandleFromDirectory(
+  directory: FileSystemDirectoryHandle,
+  path: Path,
+  create: boolean,
+): Promise<FileSystemDirectoryHandle> {
+  let current = directory;
+  for (const part of path) {
+    current = await current.getDirectoryHandle(part, { create });
+  }
+  return current;
+}
+
+async function assertWritableFileHandles(root: FileSystemDirectoryHandle): Promise<void> {
+  const probeName = `.squirrel-opfs-write-test-${Date.now()}.tmp`;
+  const probe = await root.getFileHandle(probeName, { create: true });
+  const writable = await probe.createWritable();
+  await writable.write("ok");
+  await writable.close();
+  await root.removeEntry(probeName);
 }
 
 function createAttachmentFileName(originalName: string): string {

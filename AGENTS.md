@@ -3,11 +3,13 @@
 ## Project Overview
 
 Squirrel is a local-first React task board. It runs in the browser, uses the File
-System Access API, and saves workspace data into a local folder selected by the
-user. There is no application backend in this repo.
+System Access API for Chromium folder workspaces, and uses OPFS as a desktop
+Safari fallback. There is no application backend in this repo.
 
-Use Chromium-based browsers for local testing. The app relies on local file
-access, so `localhost`, `127.0.0.1`, or an HTTPS deployment route is required.
+Use Chromium-based browsers for full local-folder testing. Desktop Safari can use
+the Browser Workspace fallback backed by OPFS, but it cannot open or continuously
+mirror a user-selected real folder. The app relies on local file/storage APIs, so
+`localhost`, `127.0.0.1`, or an HTTPS deployment route is required.
 
 ## Commands
 
@@ -41,7 +43,7 @@ The user plans to provide the PCF manifest separately.
 - `src/domain/rules/taskRules.ts` contains pure task/project creation and status
   helpers.
 - `src/repositories/LocalWorkspaceRepository.ts` is the persistence boundary for
-  File System Access API reads/writes.
+  File System Access API and OPFS reads/writes.
 - `src/services/WorkspaceService.ts` creates new workspace defaults.
 - `src/services/SerializationService.ts` parses stored JSON defensively.
 - `src/services/DashboardService.ts` computes dashboard buckets and project
@@ -65,6 +67,10 @@ archive/
 exports/markdown/
 .gtd-lite/
 ```
+
+In Browser Workspace mode, this layout is stored under OPFS at
+`squirrel-workspace/default` rather than in a user-visible folder. Backup
+export/import is the v1 path for moving Safari fallback data.
 
 Tasks are still stored as individual JSON files under either `inbox/` or
 `projects/<projectId>/tasks/`. Derived files include `.gtd-lite/index.json`,

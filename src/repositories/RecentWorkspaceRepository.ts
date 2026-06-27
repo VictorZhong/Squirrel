@@ -23,7 +23,12 @@ export async function loadRecentWorkspaces(): Promise<RecentWorkspace[]> {
         .filter((entry) => entry.handle)
         .sort((a, b) => b.lastOpenedAt.localeCompare(a.lastOpenedAt))
         .slice(0, 10)
-        .map(({ id, name, lastOpenedAt }) => ({ id, name, lastOpenedAt }));
+        .map(({ id, name, lastOpenedAt }) => ({
+          id,
+          name,
+          lastOpenedAt,
+          storageMode: "folder" as const,
+        }));
       resolve(entries);
     };
     request.onerror = () => resolve([]);
@@ -41,7 +46,7 @@ export async function rememberWorkspaceHandle(
 
   await new Promise<void>((resolve) => {
     const transaction = db.transaction(STORE_NAME, "readwrite");
-    transaction.objectStore(STORE_NAME).put({ ...workspace, handle });
+    transaction.objectStore(STORE_NAME).put({ ...workspace, storageMode: "folder", handle });
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => resolve();
   });

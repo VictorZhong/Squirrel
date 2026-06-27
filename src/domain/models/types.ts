@@ -34,6 +34,7 @@ export type TaskSortMode = "manual" | "dueDate" | "priority";
 
 export type WorkspaceThemeMode = "light" | "dark" | "auto";
 export type AppTheme = WorkspaceThemeMode;
+export type WorkspaceStorageMode = "folder" | "browser";
 
 export interface WorkspaceThemePreferences {
   mode: WorkspaceThemeMode;
@@ -118,6 +119,7 @@ export interface RecentWorkspace {
   id: string;
   name: string;
   lastOpenedAt: string;
+  storageMode?: WorkspaceStorageMode;
 }
 
 export interface AppPreferences {

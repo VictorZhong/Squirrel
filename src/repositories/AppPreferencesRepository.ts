@@ -17,7 +17,10 @@ export function loadAppPreferences(): AppPreferences {
     return {
       theme: parseTheme(parsed.theme),
       recentWorkspaces: Array.isArray(parsed.recentWorkspaces)
-        ? parsed.recentWorkspaces.slice(0, 10)
+        ? parsed.recentWorkspaces
+            .map(parseRecentWorkspace)
+            .filter((workspace): workspace is RecentWorkspace => Boolean(workspace))
+            .slice(0, 10)
         : [],
     };
   } catch {
@@ -35,7 +38,9 @@ export function rememberWorkspace(workspace: RecentWorkspace): AppPreferences {
     ...current,
     recentWorkspaces: [
       workspace,
-      ...current.recentWorkspaces.filter((item) => item.id !== workspace.id),
+      ...current.recentWorkspaces.filter(
+        (item) => recentWorkspaceKey(item) !== recentWorkspaceKey(workspace),
+      ),
     ].slice(0, 10),
   };
   saveAppPreferences(next);
@@ -46,4 +51,29 @@ function parseTheme(value: unknown): AppPreferences["theme"] {
   return ["light", "dark", "auto"].includes(String(value))
     ? (value as AppPreferences["theme"])
     : defaultPreferences.theme;
+}
+
+function parseRecentWorkspace(value: unknown): RecentWorkspace | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const record = value as Partial<RecentWorkspace>;
+  if (
+    typeof record.id !== "string" ||
+    typeof record.name !== "string" ||
+    typeof record.lastOpenedAt !== "string"
+  ) {
+    return undefined;
+  }
+  const storageMode = record.storageMode === "browser" ? "browser" : "folder";
+  return {
+    id: record.id,
+    name: record.name,
+    lastOpenedAt: record.lastOpenedAt,
+    storageMode,
+  };
+}
+
+function recentWorkspaceKey(workspace: RecentWorkspace): string {
+  return `${workspace.storageMode ?? "folder"}:${workspace.id}`;
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
   ConfigProvider,
@@ -40,6 +40,7 @@ import {
   CalendarDays,
   CheckCircle2,
   Clock3,
+  Download,
   FolderKanban,
   GripVertical,
   History,
@@ -58,6 +59,7 @@ import {
   Sun,
   Trash2,
   TimerReset,
+  Upload,
 } from "lucide-react";
 import dayjs from "dayjs";
 import { appConfig } from "./config/appConfig";
@@ -84,6 +86,7 @@ import {
   Task,
   WorkspaceThemePreferences,
   WorkspaceState,
+  WorkspaceStorageMode,
   statusLabel,
 } from "./domain/models/types";
 import { addDays, isDateInRange, toDateOnly } from "./domain/rules/dateRules";
@@ -96,6 +99,12 @@ import {
 } from "./domain/rules/taskRules";
 import { calculateDashboard } from "./services/DashboardService";
 import { LocalWorkspaceRepository } from "./repositories/LocalWorkspaceRepository";
+import {
+  WorkspaceRepository,
+  WorkspaceRepositorySupport,
+  isWorkspaceSupported,
+  workspaceStorageModeLabel,
+} from "./repositories/WorkspaceRepository";
 import {
   loadAppPreferences,
   rememberWorkspace,
@@ -118,6 +127,11 @@ import {
   EffectiveTheme,
   resolveWorkspaceTheme,
 } from "./utils/themePreference";
+import {
+  createWorkspaceBackup,
+  parseWorkspaceBackupFile,
+  serializeWorkspaceBackup,
+} from "./services/WorkspaceBackupService";
 
 const { Sider, Content } = Layout;
 const CLIPBOARD_TASK_TITLE_LIMIT = 120;
@@ -198,7 +212,8 @@ function clockTimeValue(value: string) {
 
 export default function App() {
   const { message } = AntApp.useApp();
-  const [repository, setRepository] = useState<LocalWorkspaceRepository | null>(null);
+  const repositorySupport = useMemo(() => LocalWorkspaceRepository.getSupport(), []);
+  const [repository, setRepository] = useState<WorkspaceRepository | null>(null);
   const [state, setState] = useState<WorkspaceState | null>(null);
   const [route, setRoute] = useState<RouteKey>("dashboard");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -272,7 +287,9 @@ export default function App() {
     let cancelled = false;
     void loadRecentWorkspaces().then((workspaces) => {
       if (!cancelled) {
-        setRecentWorkspaces(workspaces);
+        setRecentWorkspaces(
+          mergeRecentWorkspaces(workspaces, loadAppPreferences().recentWorkspaces),
+        );
       }
     });
 
@@ -351,9 +368,30 @@ export default function App() {
     }
   }
 
+  async function openBrowserWorkspace() {
+    setIsOpening(true);
+    try {
+      const nextRepository = await LocalWorkspaceRepository.openBrowserWorkspace();
+      await loadWorkspace(nextRepository);
+    } catch (error) {
+      if ((error as Error).name !== "AbortError") {
+        void message.error(
+          error instanceof Error ? error.message : "Failed to open browser workspace",
+        );
+      }
+    } finally {
+      setIsOpening(false);
+    }
+  }
+
   async function openRecentWorkspace(workspace: RecentWorkspace) {
     setIsOpening(true);
     try {
+      if (workspace.storageMode === "browser") {
+        await loadWorkspace(await LocalWorkspaceRepository.openBrowserWorkspace());
+        return;
+      }
+
       const handle = await getRecentWorkspaceHandle(workspace.id);
       if (!handle) {
         throw new Error("This workspace needs to be opened from its folder again.");
@@ -368,12 +406,21 @@ export default function App() {
     }
   }
 
-  async function loadWorkspace(nextRepository: LocalWorkspaceRepository) {
+  async function loadWorkspace(nextRepository: WorkspaceRepository) {
     const nextState = await nextRepository.loadOrInitialize();
+    activateWorkspace(nextRepository, nextState, "Workspace opened");
+  }
+
+  function activateWorkspace(
+    nextRepository: WorkspaceRepository,
+    nextState: WorkspaceState,
+    successText: string,
+  ) {
     const workspace = {
       id: nextState.workspace.id,
       name: nextState.workspace.name,
       lastOpenedAt: new Date().toISOString(),
+      storageMode: nextRepository.storageMode,
     };
     repository?.disposeObjectUrls();
     setRepository(nextRepository);
@@ -382,11 +429,25 @@ export default function App() {
     setSelectedTaskId(undefined);
     setSelectedBoardTags([]);
     setTaskSearchQuery("");
-    setAppPreferences(rememberWorkspace(workspace));
-    void rememberWorkspaceHandle(workspace, nextRepository.directoryHandle).then(
-      setRecentWorkspaces,
-    );
-    void message.success("Workspace opened");
+    const nextAppPreferences = rememberWorkspace(workspace);
+    setAppPreferences(nextAppPreferences);
+    if (nextRepository.storageMode === "folder") {
+      void rememberWorkspaceHandle(
+        workspace,
+        (nextRepository as LocalWorkspaceRepository).directoryHandle,
+      ).then((folderWorkspaces) =>
+        setRecentWorkspaces(
+          mergeRecentWorkspaces(folderWorkspaces, nextAppPreferences.recentWorkspaces),
+        ),
+      );
+    } else {
+      void loadRecentWorkspaces().then((folderWorkspaces) =>
+        setRecentWorkspaces(
+          mergeRecentWorkspaces(folderWorkspaces, nextAppPreferences.recentWorkspaces),
+        ),
+      );
+    }
+    void message.success(successText);
   }
 
   async function persistTask(
@@ -1053,14 +1114,56 @@ export default function App() {
     }
   }
 
+  async function handleExportBackup() {
+    if (!repository || !state) {
+      return;
+    }
+
+    try {
+      const backup = await createWorkspaceBackup(repository, state);
+      const blob = new Blob([serializeWorkspaceBackup(backup)], {
+        type: "application/json",
+      });
+      downloadBlob(blob, createBackupFileName(state.workspace.name));
+      void message.success("Workspace backup exported");
+    } catch (error) {
+      void message.error(error instanceof Error ? error.message : "Failed to export backup");
+    }
+  }
+
+  async function handleImportBackup(file: File) {
+    if (!repository) {
+      return;
+    }
+
+    Modal.confirm({
+      title: "Import backup?",
+      content: "This replaces the current browser workspace data.",
+      okText: "Import",
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          const backup = await parseWorkspaceBackupFile(file);
+          await repository.replaceWorkspace(backup.state, backup.attachmentFiles);
+          activateWorkspace(repository, backup.state, "Workspace backup imported");
+        } catch (error) {
+          void message.error(
+            error instanceof Error ? error.message : "Failed to import backup",
+          );
+        }
+      },
+    });
+  }
+
   if (!state || !repository) {
     return (
       <ConfigProvider theme={antdThemeConfig}>
         <WorkspaceGate
-          supported={LocalWorkspaceRepository.isSupported()}
+          support={repositorySupport}
           loading={isOpening}
           recentWorkspaces={recentWorkspaces}
           onOpenWorkspace={openWorkspace}
+          onOpenBrowserWorkspace={openBrowserWorkspace}
           onOpenRecentWorkspace={openRecentWorkspace}
         />
       </ConfigProvider>
@@ -1148,9 +1251,13 @@ export default function App() {
           ) : route === "settings" ? (
             <SettingsView
               state={state}
+              storageMode={repository.storageMode}
+              repositorySupport={repositorySupport}
               recentWorkspaces={recentWorkspaces}
               onSwitchWorkspace={openWorkspace}
               onOpenRecentWorkspace={openRecentWorkspace}
+              onExportBackup={handleExportBackup}
+              onImportBackup={handleImportBackup}
               onSaveProfile={handleSaveProfile}
               onSaveDefaultProject={handleSaveDefaultProject}
               onSaveGlobalPasteCaptureEnabled={handleSaveGlobalPasteCaptureEnabled}
@@ -1337,18 +1444,33 @@ export default function App() {
 }
 
 function WorkspaceGate({
-  supported,
+  support,
   loading,
   recentWorkspaces,
   onOpenWorkspace,
+  onOpenBrowserWorkspace,
   onOpenRecentWorkspace,
 }: {
-  supported: boolean;
+  support: WorkspaceRepositorySupport;
   loading: boolean;
   recentWorkspaces: RecentWorkspace[];
   onOpenWorkspace: () => Promise<void>;
+  onOpenBrowserWorkspace: () => Promise<void>;
   onOpenRecentWorkspace: (workspace: RecentWorkspace) => Promise<void>;
 }) {
+  const supported = isWorkspaceSupported(support);
+  const primaryAction = support.folder
+    ? {
+        label: "Open Workspace Folder",
+        icon: <FolderKanban size={18} />,
+        onClick: onOpenWorkspace,
+      }
+    : {
+        label: "Open Browser Workspace",
+        icon: <ShieldCheck size={18} />,
+        onClick: onOpenBrowserWorkspace,
+      };
+
   return (
     <main className="workspace-gate">
       <section className="workspace-gate-panel">
@@ -1362,14 +1484,14 @@ function WorkspaceGate({
           </div>
         </div>
         <Typography.Paragraph className="workspace-gate-description">
-          Open an empty folder to start a new workspace, or open an existing Squirrel
-          folder to continue with the same local data.
+          Open a local workspace folder, or use a private browser workspace when
+          folder access is unavailable.
         </Typography.Paragraph>
         <div className="local-data-highlight">
           <ShieldCheck size={18} />
           <span>
-            Your data is saved only in the local folder you choose. Squirrel does not
-            upload workspace data to any server.
+            Your data stays in the local folder you choose or in this browser's
+            private storage. Squirrel does not upload workspace data to any server.
           </span>
         </div>
         <Button
@@ -1377,14 +1499,14 @@ function WorkspaceGate({
           size="large"
           disabled={!supported}
           loading={loading}
-          icon={<FolderKanban size={18} />}
-          onClick={() => void onOpenWorkspace()}
+          icon={primaryAction.icon}
+          onClick={() => void primaryAction.onClick()}
         >
-          Open Workspace Folder
+          {primaryAction.label}
         </Button>
         {!supported ? (
           <Typography.Text type="danger">
-            Use a Chromium browser on localhost.
+            Use Chrome, Microsoft Edge, or desktop Safari with private browser storage.
           </Typography.Text>
         ) : null}
         {recentWorkspaces.length > 0 ? (
@@ -1393,12 +1515,16 @@ function WorkspaceGate({
             {recentWorkspaces.map((workspace) => (
               <button
                 type="button"
-                key={workspace.id}
+                key={recentWorkspaceKey(workspace)}
                 className="recent-workspace-button"
                 onClick={() => void onOpenRecentWorkspace(workspace)}
               >
                 <strong>{workspace.name}</strong>
-                <small>{formatRecentDate(workspace.lastOpenedAt)}</small>
+                <small>
+                  {formatRecentDate(workspace.lastOpenedAt)}
+                  {" · "}
+                  {workspaceStorageModeLabel(workspace.storageMode ?? "folder")}
+                </small>
               </button>
             ))}
           </div>
@@ -1410,9 +1536,13 @@ function WorkspaceGate({
 
 function SettingsView({
   state,
+  storageMode,
+  repositorySupport,
   recentWorkspaces,
   onSwitchWorkspace,
   onOpenRecentWorkspace,
+  onExportBackup,
+  onImportBackup,
   onSaveProfile,
   onSaveDefaultProject,
   onSaveGlobalPasteCaptureEnabled,
@@ -1423,9 +1553,13 @@ function SettingsView({
   onDeleteAssignee,
 }: {
   state: WorkspaceState;
+  storageMode: WorkspaceStorageMode;
+  repositorySupport: WorkspaceRepositorySupport;
   recentWorkspaces: RecentWorkspace[];
   onSwitchWorkspace: () => Promise<void>;
   onOpenRecentWorkspace: (workspace: RecentWorkspace) => Promise<void>;
+  onExportBackup: () => Promise<void>;
+  onImportBackup: (file: File) => Promise<void>;
   onSaveProfile: (
     nickname: string,
     avatarPresetId: string | undefined,
@@ -1522,9 +1656,13 @@ function SettingsView({
 
         <WorkspaceSettingsPanel
           state={state}
+          storageMode={storageMode}
+          repositorySupport={repositorySupport}
           recentWorkspaces={recentWorkspaces}
           onSwitchWorkspace={onSwitchWorkspace}
           onOpenRecentWorkspace={onOpenRecentWorkspace}
+          onExportBackup={onExportBackup}
+          onImportBackup={onImportBackup}
           onSaveDefaultProject={onSaveDefaultProject}
           onSaveGlobalPasteCaptureEnabled={onSaveGlobalPasteCaptureEnabled}
         />
@@ -1764,27 +1902,67 @@ function TaskMetadataSettingsPanel({
 
 function WorkspaceSettingsPanel({
   state,
+  storageMode,
+  repositorySupport,
   recentWorkspaces,
   onSwitchWorkspace,
   onOpenRecentWorkspace,
+  onExportBackup,
+  onImportBackup,
   onSaveDefaultProject,
   onSaveGlobalPasteCaptureEnabled,
 }: {
   state: WorkspaceState;
+  storageMode: WorkspaceStorageMode;
+  repositorySupport: WorkspaceRepositorySupport;
   recentWorkspaces: RecentWorkspace[];
   onSwitchWorkspace: () => Promise<void>;
   onOpenRecentWorkspace: (workspace: RecentWorkspace) => Promise<void>;
+  onExportBackup: () => Promise<void>;
+  onImportBackup: (file: File) => Promise<void>;
   onSaveDefaultProject: (defaultProjectId: string) => Promise<void>;
   onSaveGlobalPasteCaptureEnabled: (enabled: boolean) => Promise<void>;
 }) {
+  const importInputRef = useRef<HTMLInputElement>(null);
+
   return (
     <section className="settings-panel">
       <div className="section-heading">
         <h2>Workspace</h2>
       </div>
-      <Button icon={<Repeat2 size={16} />} onClick={() => void onSwitchWorkspace()}>
+      <Button
+        icon={<Repeat2 size={16} />}
+        disabled={!repositorySupport.folder}
+        onClick={() => void onSwitchWorkspace()}
+      >
         Switch workspace
       </Button>
+      {storageMode === "browser" ? (
+        <div className="settings-action-grid">
+          <Button icon={<Download size={16} />} onClick={() => void onExportBackup()}>
+            Export Backup
+          </Button>
+          <Button
+            icon={<Upload size={16} />}
+            onClick={() => importInputRef.current?.click()}
+          >
+            Import Backup
+          </Button>
+          <input
+            ref={importInputRef}
+            className="hidden-file-input"
+            type="file"
+            accept="application/json,.json"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) {
+                void onImportBackup(file);
+              }
+            }}
+          />
+        </div>
+      ) : null}
       <div className="settings-row">
         <span>Paste to create task</span>
         <Switch
@@ -1812,6 +1990,10 @@ function WorkspaceSettingsPanel({
         <strong>{state.workspace.name}</strong>
       </div>
       <div className="settings-row">
+        <span>Storage</span>
+        <strong>{workspaceStorageModeLabel(storageMode)}</strong>
+      </div>
+      <div className="settings-row">
         <span>Schema</span>
         <strong>v{state.workspace.schemaVersion}</strong>
       </div>
@@ -1833,12 +2015,16 @@ function WorkspaceSettingsPanel({
           {recentWorkspaces.map((workspace) => (
             <button
               type="button"
-              key={workspace.id}
+              key={recentWorkspaceKey(workspace)}
               className="recent-workspace-button"
               onClick={() => void onOpenRecentWorkspace(workspace)}
             >
               <strong>{workspace.name}</strong>
-              <small>{formatRecentDate(workspace.lastOpenedAt)}</small>
+              <small>
+                {formatRecentDate(workspace.lastOpenedAt)}
+                {" · "}
+                {workspaceStorageModeLabel(workspace.storageMode ?? "folder")}
+              </small>
             </button>
           ))}
         </div>
@@ -2045,6 +2231,54 @@ function createMenuItems(): MenuProps["items"] {
     { key: "timeline", icon: <History size={16} />, label: "Timeline" },
     { key: "settings", icon: <Settings size={16} />, label: "Settings" },
   ];
+}
+
+function mergeRecentWorkspaces(
+  folderWorkspaces: RecentWorkspace[],
+  appWorkspaces: RecentWorkspace[],
+): RecentWorkspace[] {
+  const byKey = new Map<string, RecentWorkspace>();
+  for (const workspace of [...folderWorkspaces, ...appWorkspaces]) {
+    const normalized = {
+      ...workspace,
+      storageMode: workspace.storageMode ?? "folder",
+    };
+    const key = recentWorkspaceKey(normalized);
+    const current = byKey.get(key);
+    if (!current || normalized.lastOpenedAt > current.lastOpenedAt) {
+      byKey.set(key, normalized);
+    }
+  }
+  return Array.from(byKey.values())
+    .sort((a, b) => b.lastOpenedAt.localeCompare(a.lastOpenedAt))
+    .slice(0, 10);
+}
+
+function recentWorkspaceKey(workspace: RecentWorkspace): string {
+  return `${workspace.storageMode ?? "folder"}:${workspace.id}`;
+}
+
+function downloadBlob(blob: Blob, fileName: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function createBackupFileName(workspaceName: string): string {
+  const safeName =
+    workspaceName
+      .trim()
+      .replaceAll("\\", "-")
+      .replaceAll("/", "-")
+      .replace(/[^\w.\-]+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "") || "workspace";
+  return `squirrel-${safeName}-${toDateOnly()}.json`;
 }
 
 function createClipboardTaskContent(
