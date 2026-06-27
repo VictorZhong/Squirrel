@@ -1142,7 +1142,7 @@ export default function App() {
           )}
           <footer className="app-footer">
             <a href={appConfig.userGuideUrl} target="_blank" rel="noreferrer">
-              Supported by Squirrel team
+              Built by Squirrel team
             </a>
           </footer>
         </Content>
