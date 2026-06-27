@@ -37,9 +37,16 @@ describe("SerializationService", () => {
     expect(preferences.boardColumns).toContain("todo");
     expect(preferences.dueSoonDays).toBe(7);
     expect(preferences.showProjectNameOnBoard).toBe(true);
+    expect(preferences.globalPasteCaptureEnabled).toBe(true);
   });
 
   it("parses the board project name preference", () => {
     expect(parsePreferences({ showProjectNameOnBoard: false }).showProjectNameOnBoard).toBe(false);
+  });
+
+  it("parses the global paste capture preference", () => {
+    expect(
+      parsePreferences({ globalPasteCaptureEnabled: false }).globalPasteCaptureEnabled,
+    ).toBe(false);
   });
 });

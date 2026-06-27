@@ -406,6 +406,26 @@ export const avatarPresets: AvatarPreset[] = [
       bgColor: "#D2EFF3",
     },
   },
+  {
+    id: "violet-beanie",
+    config: {
+      sex: "woman",
+      faceColor: "#F9C9B6",
+      earSize: "big",
+      hairColor: "#6BD9E9",
+      hairStyle: "womanLong",
+      hatColor: "#506AF4",
+      hatStyle: "beanie",
+      eyeStyle: "smile",
+      eyeBrowStyle: "upWoman",
+      glassesStyle: "square",
+      noseStyle: "round",
+      mouthStyle: "laugh",
+      shirtStyle: "hoody",
+      shirtColor: "#506AF4",
+      bgColor: "#E0DDFF",
+    },
+  },
 ];
 
 export function getAvatarPreset(id?: string): AvatarPreset | undefined {

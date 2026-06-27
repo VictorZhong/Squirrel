@@ -35,6 +35,10 @@ describe("WorkspaceService", () => {
     expect(createDefaultPreferences().showProjectNameOnBoard).toBe(true);
   });
 
+  it("enables global paste capture by default", () => {
+    expect(createDefaultPreferences().globalPasteCaptureEnabled).toBe(true);
+  });
+
   it("creates profile and tag defaults", () => {
     const preferences = createDefaultPreferences();
 

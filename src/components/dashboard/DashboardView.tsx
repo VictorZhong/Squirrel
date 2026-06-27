@@ -71,7 +71,11 @@ export function DashboardView({
         })}
       </section>
 
-      <CompletionHeatmap tasks={tasks} onOpenTimeline={() => onOpenRoute("timeline")} />
+      <CompletionHeatmap
+        tasks={tasks}
+        onOpenTask={onOpenTask}
+        onOpenTimeline={() => onOpenRoute("timeline")}
+      />
 
       <section className="dashboard-lanes">
         <TaskLane
@@ -136,9 +140,11 @@ export function DashboardView({
 
 function CompletionHeatmap({
   tasks,
+  onOpenTask,
   onOpenTimeline,
 }: {
   tasks: Task[];
+  onOpenTask: (task: Task) => void;
   onOpenTimeline: () => void;
 }) {
   const doneTasks = tasks.filter(
@@ -146,42 +152,82 @@ function CompletionHeatmap({
   );
   const weeks = buildCompletionWeeks(doneTasks);
   const totalDone = doneTasks.length;
+  const recentDoneTasks = [...doneTasks]
+    .sort((a, b) => (b.completedAt ?? "").localeCompare(a.completedAt ?? ""))
+    .slice(0, 5);
+  const lastSevenDays = doneTasks.filter((task) =>
+    task.completedAt
+      ? dayjs(task.completedAt).isAfter(dayjs().subtract(7, "day").startOf("day"))
+      : false,
+  ).length;
+  const bestDay = getBestCompletionDay(doneTasks);
 
   return (
     <section className="completion-panel">
       <div className="section-heading">
         <div>
           <h2>Completion Heatmap</h2>
-          <span>{totalDone} completed main tasks</span>
+          <span>
+            {totalDone} completed main tasks · {weeks.length >= 53 ? "1 year" : "6 months"}
+          </span>
         </div>
         <Button size="small" onClick={onOpenTimeline}>
           Timeline
         </Button>
       </div>
-      <div className="heatmap-shell" aria-label="Completed task heatmap">
-        <div className="heatmap-grid">
-          {weeks.map((week, weekIndex) => (
-            <div className="heatmap-week" key={`week-${weekIndex}`}>
-              {week.map((day) => (
-                <span
-                  key={day.date}
-                  className={`heatmap-cell heatmap-level-${day.level} ${
-                    day.isFuture ? "heatmap-cell-future" : ""
-                  }`}
-                  title={`${day.date}: ${day.count} completed`}
-                  aria-label={`${day.date}: ${day.count} completed`}
-                />
-              ))}
-            </div>
-          ))}
+      <div className="completion-panel-body">
+        <div className="heatmap-shell" aria-label="Completed task heatmap">
+          <div className="heatmap-grid">
+            {weeks.map((week, weekIndex) => (
+              <div className="heatmap-week" key={`week-${weekIndex}`}>
+                {week.map((day) => (
+                  <span
+                    key={day.date}
+                    className={`heatmap-cell heatmap-level-${day.level} ${
+                      day.isFuture ? "heatmap-cell-future" : ""
+                    }`}
+                    title={`${day.date}: ${day.count} completed`}
+                    aria-label={`${day.date}: ${day.count} completed`}
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
+          <div className="heatmap-legend" aria-hidden="true">
+            <span>Less</span>
+            {[0, 1, 2, 3, 4].map((level) => (
+              <i key={level} className={`heatmap-cell heatmap-level-${level}`} />
+            ))}
+            <span>More</span>
+          </div>
         </div>
-        <div className="heatmap-legend" aria-hidden="true">
-          <span>Less</span>
-          {[0, 1, 2, 3, 4].map((level) => (
-            <i key={level} className={`heatmap-cell heatmap-level-${level}`} />
-          ))}
-          <span>More</span>
-        </div>
+        <aside className="completion-insight">
+          <div className="completion-stats">
+            <span>
+              <strong>{lastSevenDays}</strong>
+              Last 7 days
+            </span>
+            <span>
+              <strong>{bestDay?.count ?? 0}</strong>
+              Best day
+            </span>
+          </div>
+          <div className="recent-completions">
+            <span>Recent completions</span>
+            {recentDoneTasks.map((task) => (
+              <button
+                type="button"
+                key={task.id}
+                className="recent-completion-item"
+                onClick={() => onOpenTask(task)}
+              >
+                <strong>{task.title}</strong>
+                <small>{task.completedAt ? dayjs(task.completedAt).format("MMM D") : ""}</small>
+              </button>
+            ))}
+            {recentDoneTasks.length === 0 ? <span className="empty-line">No completions</span> : null}
+          </div>
+        </aside>
       </div>
     </section>
   );
@@ -189,7 +235,16 @@ function CompletionHeatmap({
 
 function buildCompletionWeeks(tasks: Task[]) {
   const today = dayjs().startOf("day");
-  const start = today.subtract(12, "week").startOf("week");
+  const firstCompletion = tasks.reduce<dayjs.Dayjs | undefined>((oldest, task) => {
+    if (!task.completedAt) {
+      return oldest;
+    }
+    const completedAt = dayjs(task.completedAt).startOf("day");
+    return !oldest || completedAt.isBefore(oldest) ? completedAt : oldest;
+  }, undefined);
+  const weeksToShow =
+    firstCompletion && today.diff(firstCompletion, "week") >= 26 ? 53 : 26;
+  const start = today.subtract(weeksToShow - 1, "week").startOf("week");
   const counts = new Map<string, number>();
 
   for (const task of tasks) {
@@ -200,7 +255,7 @@ function buildCompletionWeeks(tasks: Task[]) {
     counts.set(date, (counts.get(date) ?? 0) + 1);
   }
 
-  return Array.from({ length: 13 }, (_, weekIndex) =>
+  return Array.from({ length: weeksToShow }, (_, weekIndex) =>
     Array.from({ length: 7 }, (_, dayIndex) => {
       const day = start.add(weekIndex * 7 + dayIndex, "day");
       const date = day.format("YYYY-MM-DD");
@@ -213,6 +268,21 @@ function buildCompletionWeeks(tasks: Task[]) {
       };
     }),
   );
+}
+
+function getBestCompletionDay(tasks: Task[]): { date: string; count: number } | undefined {
+  const counts = new Map<string, number>();
+  for (const task of tasks) {
+    if (!task.completedAt) {
+      continue;
+    }
+    const date = dayjs(task.completedAt).format("YYYY-MM-DD");
+    counts.set(date, (counts.get(date) ?? 0) + 1);
+  }
+
+  return Array.from(counts.entries())
+    .map(([date, count]) => ({ date, count }))
+    .sort((a, b) => b.count - a.count || b.date.localeCompare(a.date))[0];
 }
 
 function completionLevel(count: number): number {

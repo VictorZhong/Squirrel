@@ -24,6 +24,7 @@ import {
 import {
   Attachment,
   Project,
+  TASK_TAG_LIMIT,
   TASK_IMPORTANCES,
   TASK_PRIORITIES,
   TASK_STATUSES,
@@ -33,6 +34,7 @@ import {
   statusLabel,
 } from "../../domain/models/types";
 import { applyTaskStatus } from "../../domain/rules/taskRules";
+import { normalizeTaskTags } from "../../utils/taskTags";
 
 interface TaskDrawerProps {
   open: boolean;
@@ -89,9 +91,13 @@ export function TaskDrawer({
   const currentTask = draft;
 
   async function save(next: Task = currentTask) {
+    const nextTask = {
+      ...next,
+      tags: normalizeTaskTags(next.tags),
+    };
     setIsSaving(true);
     try {
-      const saved = await onSave(next);
+      const saved = await onSave(nextTask);
       if (saved) {
         onClose();
       }
@@ -254,10 +260,12 @@ export function TaskDrawer({
             mode="tags"
             value={draft.tags}
             onChange={(tags) => {
-              update({ tags });
-              void onRegisterTags(tags);
+              const normalizedTags = normalizeTaskTags(tags);
+              update({ tags: normalizedTags });
+              void onRegisterTags(normalizedTags);
             }}
             options={availableTags.map((tag) => ({ value: tag, label: tag }))}
+            maxCount={TASK_TAG_LIMIT}
             tokenSeparators={[","]}
             placeholder="Add tags"
           />

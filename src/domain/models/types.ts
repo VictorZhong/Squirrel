@@ -24,6 +24,8 @@ export type TaskPriority = "none" | "low" | "medium" | "high" | "urgent";
 
 export type TaskImportance = "none" | "low" | "medium" | "high";
 
+export const TASK_TAG_LIMIT = 5;
+
 export type AttachmentType = "image" | "file" | "link";
 
 export type WorkspaceView = "dashboard" | "kanban" | "list";
@@ -95,6 +97,7 @@ export interface WorkspacePreferences {
   autoArchiveDoneAfterDays: number;
   markdownExportEnabled: boolean;
   showProjectNameOnBoard: boolean;
+  globalPasteCaptureEnabled: boolean;
   screenshotTaskDefaultProjectId?: string;
   taskSortMode: TaskSortMode;
   userProfile: UserProfile;

@@ -48,6 +48,7 @@ import {
   Pencil,
   Plus,
   Repeat2,
+  Search,
   Settings,
   ShieldCheck,
   Trash2,
@@ -96,8 +97,11 @@ import {
   rememberWorkspaceHandle,
 } from "./repositories/RecentWorkspaceRepository";
 import { parentTasks, sortTasksForDisplay } from "./utils/taskDisplay";
+import { filterTasksBySearch } from "./utils/taskSearch";
+import { filterTasksByTags } from "./utils/taskTags";
 
 const { Sider, Content } = Layout;
+const CLIPBOARD_TASK_TITLE_LIMIT = 120;
 
 type RouteKey =
   | "dashboard"
@@ -133,6 +137,8 @@ export default function App() {
   const [isOpening, setIsOpening] = useState(false);
   const [, setAppPreferences] = useState(loadAppPreferences);
   const [recentWorkspaces, setRecentWorkspaces] = useState<RecentWorkspace[]>([]);
+  const [selectedBoardTags, setSelectedBoardTags] = useState<string[]>([]);
+  const [taskSearchQuery, setTaskSearchQuery] = useState("");
 
   const selectedTask = state?.tasks.find((task) => task.id === selectedTaskId);
   const selectedProjectId = route.startsWith("project:") ? route.slice("project:".length) : undefined;
@@ -150,9 +156,31 @@ export default function App() {
     () => (state ? getRouteTasks(route, state) : []),
     [route, state],
   );
+  const taskViewRoute = isTaskViewRoute(route);
+  const searchedPageTasks = useMemo(
+    () =>
+      state && taskViewRoute
+        ? filterTasksBySearch(pageTasks, taskSearchQuery, state.projects)
+        : pageTasks,
+    [pageTasks, state, taskSearchQuery, taskViewRoute],
+  );
+  const boardFilteredTasks = useMemo(
+    () => filterTasksByTags(searchedPageTasks, selectedBoardTags),
+    [searchedPageTasks, selectedBoardTags],
+  );
   const pageTitle = state ? getRouteTitle(route, state.projects) : "Squirrel";
-  const pageSubtitle = route === "settings" ? state?.workspace.name : `${pageTasks.length} tasks`;
   const boardCapable = isBoardCapableRoute(route);
+  const hasSearchQuery = taskViewRoute && taskSearchQuery.trim().length > 0;
+  const hasBoardTagFilters =
+    taskViewRoute && boardCapable && viewMode === "board" && selectedBoardTags.length > 0;
+  const visibleTaskCount = hasBoardTagFilters ? boardFilteredTasks.length : searchedPageTasks.length;
+  const hasTaskFilters = hasSearchQuery || hasBoardTagFilters;
+  const pageSubtitle =
+    route === "settings"
+      ? state?.workspace.name
+      : hasTaskFilters
+        ? `${visibleTaskCount}/${pageTasks.length} tasks`
+        : `${pageTasks.length} tasks`;
 
   useEffect(() => {
     let cancelled = false;
@@ -166,6 +194,52 @@ export default function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    setSelectedBoardTags((current) =>
+      state ? current.filter((tag) => state.preferences.tags.includes(tag)) : [],
+    );
+  }, [state?.preferences.tags]);
+
+  useEffect(() => {
+    if (!state || !repository || !state.preferences.globalPasteCaptureEnabled) {
+      return;
+    }
+
+    function handleWorkspacePaste(event: ClipboardEvent) {
+      if (event.defaultPrevented || isEditablePasteTarget(event.target)) {
+        return;
+      }
+
+      const clipboard = event.clipboardData;
+      if (!clipboard) {
+        return;
+      }
+
+      const imageFiles = Array.from(clipboard.files).filter((file) =>
+        file.type.startsWith("image/"),
+      );
+      const text = clipboard.getData("text/plain");
+
+      if (imageFiles.length > 0) {
+        const content = createClipboardTaskContent(text);
+        event.preventDefault();
+        void handleCreateAttachmentTask(content?.title, imageFiles, content?.description);
+        return;
+      }
+
+      const content = createClipboardTaskContent(text);
+      if (!content) {
+        return;
+      }
+
+      event.preventDefault();
+      void handleCreateClipboardTextTask(text);
+    }
+
+    window.addEventListener("paste", handleWorkspacePaste);
+    return () => window.removeEventListener("paste", handleWorkspacePaste);
+  }, [repository, selectedProjectId, state]);
 
   const resolveAttachmentUrl = useCallback(
     (attachment: Attachment) => {
@@ -220,6 +294,8 @@ export default function App() {
     setState(nextState);
     setRoute(nextState.preferences.defaultView === "dashboard" ? "dashboard" : "all");
     setSelectedTaskId(undefined);
+    setSelectedBoardTags([]);
+    setTaskSearchQuery("");
     setAppPreferences(rememberWorkspace(workspace));
     void rememberWorkspaceHandle(workspace, nextRepository.directoryHandle).then(
       setRecentWorkspaces,
@@ -317,22 +393,46 @@ export default function App() {
     }
   }
 
-  async function handleCreateAttachmentTask(title: string | undefined, files: File[]) {
+  async function handleCreateClipboardTextTask(text: string) {
+    if (!state) {
+      return;
+    }
+    const content = createClipboardTaskContent(text);
+    if (!content) {
+      return;
+    }
+    const projectId = getDefaultTaskProjectId(state, selectedProjectId);
+    const task = createTask({
+      title: content.title,
+      description: content.description,
+      projectId,
+      status: "inbox",
+      sortOrder: firstSortOrder(state.tasks, "inbox", projectId),
+    });
+
+    const nextState = await persistTask(task);
+    if (nextState) {
+      void message.success(task.status === "inbox" ? "Task added to Inbox" : "Task created");
+      setSelectedTaskId(task.id);
+    }
+  }
+
+  async function handleCreateAttachmentTask(
+    title: string | undefined,
+    files: File[],
+    description?: string,
+  ) {
     if (!state || !repository) {
       return;
     }
     const projectId = getDefaultTaskProjectId(state, selectedProjectId);
     const baseTask = createTask({
       title: title || createScreenshotTaskTitle(),
+      description,
       projectId,
       status: "inbox",
       sortOrder: firstSortOrder(state.tasks, "inbox", projectId),
     });
-
-    const stateWithBase = await persistTask(baseTask);
-    if (!stateWithBase) {
-      return;
-    }
 
     let updatedTask = baseTask;
     for (const file of files) {
@@ -340,7 +440,7 @@ export default function App() {
       updatedTask = appendAttachment(updatedTask, attachment);
     }
 
-    const nextState = await persistTask(updatedTask, baseTask, stateWithBase);
+    const nextState = await persistTask(updatedTask);
     if (nextState) {
       void message.success(
         updatedTask.status === "inbox" ? "Task added to Inbox" : "Task created",
@@ -574,6 +674,29 @@ export default function App() {
     }
   }
 
+  async function handleSaveGlobalPasteCaptureEnabled(globalPasteCaptureEnabled: boolean) {
+    if (!state || !repository) {
+      return;
+    }
+
+    const nextState = {
+      ...state,
+      preferences: {
+        ...state.preferences,
+        globalPasteCaptureEnabled,
+      },
+    };
+    setState(nextState);
+    try {
+      await repository.savePreferences(nextState);
+    } catch (error) {
+      setState(state);
+      void message.error(
+        error instanceof Error ? error.message : "Failed to save paste preference",
+      );
+    }
+  }
+
   async function handleCreateTag(tag: string) {
     await handleRegisterTags([tag]);
   }
@@ -738,6 +861,9 @@ export default function App() {
   const subtasks = selectedTask
     ? state.tasks.filter((task) => task.parentTaskId === selectedTask.id)
     : [];
+  const boardTasks = hasBoardTagFilters ? boardFilteredTasks : searchedPageTasks;
+  const viewTasks =
+    boardCapable && viewMode === "board" ? boardTasks : searchedPageTasks;
 
   return (
     <Layout className="app-layout">
@@ -816,6 +942,7 @@ export default function App() {
               onOpenRecentWorkspace={openRecentWorkspace}
               onSaveProfile={handleSaveProfile}
               onSaveDefaultProject={handleSaveDefaultProject}
+              onSaveGlobalPasteCaptureEnabled={handleSaveGlobalPasteCaptureEnabled}
               onCreateTag={handleCreateTag}
               onDeleteTag={handleDeleteTag}
             />
@@ -823,12 +950,13 @@ export default function App() {
             <TimelineView
               tasks={state.tasks}
               projects={state.projects}
+              availableTags={state.preferences.tags}
               onOpenTask={(task) => setSelectedTaskId(task.id)}
             />
           ) : (
             <section className="workspace-view">
               <div className="view-toolbar">
-                <Space>
+                <Space className="view-toolbar-controls" wrap>
                   {boardCapable ? (
                     <Segmented
                       value={viewMode}
@@ -850,25 +978,59 @@ export default function App() {
                     </span>
                   ) : null}
                 </Space>
-                {selectedProject ? (
-                  <span className="project-description">{selectedProject.description}</span>
-                ) : null}
+                <div className="view-toolbar-right">
+                  {selectedProject ? (
+                    <span className="project-description">{selectedProject.description}</span>
+                  ) : null}
+                  <Input
+                    className="task-search-input"
+                    allowClear
+                    prefix={<Search size={14} />}
+                    value={taskSearchQuery}
+                    placeholder="Search tasks"
+                    onChange={(event) => setTaskSearchQuery(event.target.value)}
+                  />
+                  {boardCapable && viewMode === "board" && state.preferences.tags.length > 0 ? (
+                    <Select
+                      className="board-tag-filter"
+                      mode="multiple"
+                      allowClear
+                      maxTagCount="responsive"
+                      value={selectedBoardTags}
+                      placeholder="Tags"
+                      onChange={(tags) => setSelectedBoardTags(tags)}
+                      options={state.preferences.tags.map((tag) => ({
+                        value: tag,
+                        label: tag,
+                      }))}
+                    />
+                  ) : null}
+                  {hasBoardTagFilters ? (
+                    <span className="task-filter-count">
+                      {boardTasks.length}/{pageTasks.length}
+                    </span>
+                  ) : null}
+                </div>
               </div>
               {pageTasks.length === 0 ? (
                 <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              ) : viewTasks.length === 0 ? (
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No matching tasks" />
               ) : boardCapable && viewMode === "board" ? (
                 <KanbanBoard
-                  tasks={pageTasks.filter((task) => !task.parentTaskId)}
+                  tasks={boardTasks.filter((task) => !task.parentTaskId)}
+                  orderingTasks={pageTasks.filter((task) => !task.parentTaskId)}
                   allTasks={state.tasks}
                   projects={state.projects}
                   showProjectName={state.preferences.showProjectNameOnBoard}
                   onOpenTask={(task) => setSelectedTaskId(task.id)}
                   onToggleSubtask={handleToggleSubtask}
                   onTasksChange={persistTasks}
+                  onOpenDoneRoute={() => setRoute("done")}
                 />
               ) : (
                 <TaskList
-                  tasks={sortTasksForDisplay(pageTasks)}
+                  tasks={sortTasksForDisplay(searchedPageTasks)}
                   projects={state.projects}
                   onOpenTask={(task) => setSelectedTaskId(task.id)}
                 />
@@ -1036,6 +1198,7 @@ function SettingsView({
   onOpenRecentWorkspace,
   onSaveProfile,
   onSaveDefaultProject,
+  onSaveGlobalPasteCaptureEnabled,
   onCreateTag,
   onDeleteTag,
 }: {
@@ -1045,6 +1208,7 @@ function SettingsView({
   onOpenRecentWorkspace: (workspace: RecentWorkspace) => Promise<void>;
   onSaveProfile: (nickname: string, avatarPresetId?: string) => Promise<void>;
   onSaveDefaultProject: (defaultProjectId: string) => Promise<void>;
+  onSaveGlobalPasteCaptureEnabled: (enabled: boolean) => Promise<void>;
   onCreateTag: (tag: string) => Promise<void>;
   onDeleteTag: (tag: string) => Promise<void>;
 }) {
@@ -1154,6 +1318,13 @@ function SettingsView({
         <Button icon={<Repeat2 size={16} />} onClick={() => void onSwitchWorkspace()}>
           Switch workspace
         </Button>
+        <div className="settings-row">
+          <span>Paste to create task</span>
+          <Switch
+            checked={state.preferences.globalPasteCaptureEnabled}
+            onChange={(checked) => void onSaveGlobalPasteCaptureEnabled(checked)}
+          />
+        </div>
         <div className="settings-field">
           <span>Default project</span>
           <Select
@@ -1414,6 +1585,39 @@ function createMenuItems(): MenuProps["items"] {
   ];
 }
 
+function createClipboardTaskContent(
+  text: string,
+): { title: string; description?: string } | undefined {
+  const description = text.trim();
+  const normalizedTitle = description.replace(/\s+/g, " ").trim();
+  if (!normalizedTitle) {
+    return undefined;
+  }
+
+  const titleCharacters = Array.from(normalizedTitle);
+  if (titleCharacters.length <= CLIPBOARD_TASK_TITLE_LIMIT) {
+    return { title: normalizedTitle };
+  }
+
+  return {
+    title: `${titleCharacters.slice(0, CLIPBOARD_TASK_TITLE_LIMIT - 3).join("").trimEnd()}...`,
+    description,
+  };
+}
+
+function isEditablePasteTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) {
+    return false;
+  }
+
+  const editable = target.closest("input, textarea, [contenteditable]");
+  if (!(editable instanceof HTMLElement)) {
+    return false;
+  }
+
+  return editable.getAttribute("contenteditable") !== "false";
+}
+
 function getRouteTitle(route: RouteKey, projects: Project[]): string {
   if (route.startsWith("project:")) {
     return projects.find((project) => project.id === route.slice("project:".length))?.name ?? "Project";
@@ -1481,6 +1685,10 @@ function getRouteTasks(route: RouteKey, state: WorkspaceState): Task[] {
 
 function isBoardCapableRoute(route: RouteKey): boolean {
   return route === "all" || route === "inbox" || route.startsWith("project:");
+}
+
+function isTaskViewRoute(route: RouteKey): boolean {
+  return route !== "dashboard" && route !== "timeline" && route !== "settings";
 }
 
 function getDefaultTaskProjectId(

@@ -68,6 +68,10 @@ export function parsePreferences(value: unknown): WorkspacePreferences {
       typeof value.showProjectNameOnBoard === "boolean"
         ? value.showProjectNameOnBoard
         : defaults.showProjectNameOnBoard,
+    globalPasteCaptureEnabled:
+      typeof value.globalPasteCaptureEnabled === "boolean"
+        ? value.globalPasteCaptureEnabled
+        : defaults.globalPasteCaptureEnabled,
     screenshotTaskDefaultProjectId: optionalString(value.screenshotTaskDefaultProjectId),
     taskSortMode:
       ["manual", "dueDate", "priority"].includes(String(value.taskSortMode))

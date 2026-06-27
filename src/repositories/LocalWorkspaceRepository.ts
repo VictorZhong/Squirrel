@@ -218,6 +218,7 @@ export class LocalWorkspaceRepository {
       sizeBytes: file.size,
       createdAt: timestamp,
     };
+    this.cacheObjectUrl(attachment.relativePath, file);
 
     await this.appendActivity("attachment.created", "attachment", attachment.id, {
       taskId: task.id,
@@ -254,9 +255,7 @@ export class LocalWorkspaceRepository {
       return cached;
     }
     const file = await this.readFile(attachment.relativePath.split("/"));
-    const url = URL.createObjectURL(file);
-    this.objectUrls.set(attachment.relativePath, url);
-    return url;
+    return this.cacheObjectUrl(attachment.relativePath, file);
   }
 
   disposeObjectUrls(): void {
@@ -288,6 +287,16 @@ export class LocalWorkspaceRepository {
     }
 
     return projects;
+  }
+
+  private cacheObjectUrl(relativePath: string, file: Blob): string {
+    const cached = this.objectUrls.get(relativePath);
+    if (cached) {
+      URL.revokeObjectURL(cached);
+    }
+    const url = URL.createObjectURL(file);
+    this.objectUrls.set(relativePath, url);
+    return url;
   }
 
   private async readTasks(projects: Project[]): Promise<Task[]> {

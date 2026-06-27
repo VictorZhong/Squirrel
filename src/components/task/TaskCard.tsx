@@ -3,6 +3,8 @@ import { CalendarDays, Paperclip, UserRound } from "lucide-react";
 import { Task, priorityLabel } from "../../domain/models/types";
 import { statusClassName } from "../../utils/taskDisplay";
 
+const VISIBLE_CARD_TAGS = 2;
+
 interface TaskCardProps {
   task: Task;
   projectName: string;
@@ -32,6 +34,8 @@ export function TaskCard({
   const importanceMarks = "!".repeat(importanceWeight(task.importance));
   const showAssignee =
     Boolean(task.assignee) && (task.status === "waiting" || task.status === "blocked");
+  const visibleTags = task.tags.slice(0, VISIBLE_CARD_TAGS);
+  const hiddenTagCount = task.tags.length - visibleTags.length;
   const hasFooterBadges = showAssignee || task.attachments.length > 0 || subtasks.length > 0;
 
   return (
@@ -72,6 +76,20 @@ export function TaskCard({
           </span>
         ) : null}
       </span>
+      {visibleTags.length > 0 ? (
+        <span className="task-card-tags-row">
+          {visibleTags.map((tag) => (
+            <Tag key={tag} className="task-tag-badge" title={tag}>
+              #{tag}
+            </Tag>
+          ))}
+          {hiddenTagCount > 0 ? (
+            <Tag className="task-tag-more" title={task.tags.slice(VISIBLE_CARD_TAGS).join(", ")}>
+              +{hiddenTagCount}
+            </Tag>
+          ) : null}
+        </span>
+      ) : null}
       {subtasks.length > 0 ? (
         <div className="task-card-subtasks">
           {subtasks.slice(0, 5).map((subtask) => (

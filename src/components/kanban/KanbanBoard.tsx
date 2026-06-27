@@ -15,7 +15,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useDroppable } from "@dnd-kit/core";
-import { Empty } from "antd";
+import { Button, Empty } from "antd";
 import { useMemo, useState } from "react";
 import {
   BOARD_STATUSES,
@@ -30,22 +30,26 @@ import { TaskCard } from "../task/TaskCard";
 
 interface KanbanBoardProps {
   tasks: Task[];
+  orderingTasks?: Task[];
   allTasks: Task[];
   projects: Project[];
   showProjectName: boolean;
   onOpenTask: (task: Task) => void;
   onToggleSubtask: (task: Task, done: boolean) => Promise<void>;
   onTasksChange: (tasks: Task[], previousTasks: Map<string, Task>) => Promise<void>;
+  onOpenDoneRoute: () => void;
 }
 
 export function KanbanBoard({
   tasks,
+  orderingTasks = tasks,
   allTasks,
   projects,
   showProjectName,
   onOpenTask,
   onToggleSubtask,
   onTasksChange,
+  onOpenDoneRoute,
 }: KanbanBoardProps) {
   const projectNames = useMemo(
     () => new Map(projects.map((project) => [project.id, project.name])),
@@ -74,7 +78,7 @@ export function KanbanBoard({
       return;
     }
 
-    const changed = reorderTasks(tasks, activeId, overId);
+    const changed = reorderTasks(orderingTasks, activeId, overId);
     if (changed.length === 0) {
       setActiveTask(undefined);
       return;
@@ -100,20 +104,24 @@ export function KanbanBoard({
     >
       <div className="kanban-board">
         {BOARD_STATUSES.map((status) => {
-          const columnTasks = tasks
+          const allColumnTasks = tasks
             .filter((task) => task.status === status)
             .sort((a, b) => a.sortOrder - b.sortOrder);
+          const columnTasks =
+            status === "done" ? sortDoneTasks(allColumnTasks).slice(0, 20) : allColumnTasks;
           return (
             <KanbanColumn
               key={status}
               status={status}
               tasks={columnTasks}
+              totalTasks={allColumnTasks.length}
               allTasks={allTasks}
               projectNames={projectNames}
               projectsById={projectsById}
               showProjectName={showProjectName}
               onOpenTask={onOpenTask}
               onToggleSubtask={onToggleSubtask}
+              onOpenDoneRoute={onOpenDoneRoute}
             />
           );
         })}
@@ -139,29 +147,34 @@ export function KanbanBoard({
 function KanbanColumn({
   status,
   tasks,
+  totalTasks,
   allTasks,
   projectNames,
   projectsById,
   showProjectName,
   onOpenTask,
   onToggleSubtask,
+  onOpenDoneRoute,
 }: {
   status: BoardTaskStatus;
   tasks: Task[];
+  totalTasks: number;
   allTasks: Task[];
   projectNames: ReadonlyMap<string, string>;
   projectsById: ReadonlyMap<string, Project>;
   showProjectName: boolean;
   onOpenTask: (task: Task) => void;
   onToggleSubtask: (task: Task, done: boolean) => Promise<void>;
+  onOpenDoneRoute: () => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
+  const hiddenDoneCount = status === "done" ? Math.max(0, totalTasks - tasks.length) : 0;
 
   return (
     <section ref={setNodeRef} className={`kanban-column ${isOver ? "kanban-column-over" : ""}`}>
       <header className="kanban-column-header">
         <span>{statusLabel[status]}</span>
-        <span>{tasks.length}</span>
+        <span>{totalTasks}</span>
       </header>
       <SortableContext items={tasks.map((task) => task.id)} strategy={verticalListSortingStrategy}>
         <div className="kanban-column-body">
@@ -177,6 +190,11 @@ function KanbanColumn({
               onToggleSubtask={onToggleSubtask}
             />
           ))}
+          {hiddenDoneCount > 0 ? (
+            <Button className="kanban-view-more" onClick={onOpenDoneRoute}>
+              View more
+            </Button>
+          ) : null}
           {tasks.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} /> : null}
         </div>
       </SortableContext>
@@ -295,4 +313,11 @@ function getTargetStatus(tasks: Task[], overId: string): BoardTaskStatus | undef
   return BOARD_STATUSES.includes(overTask?.status as BoardTaskStatus)
     ? (overTask?.status as BoardTaskStatus)
     : undefined;
+}
+
+function sortDoneTasks(tasks: Task[]): Task[] {
+  return [...tasks].sort((a, b) => {
+    const dateCompare = (b.completedAt ?? b.updatedAt).localeCompare(a.completedAt ?? a.updatedAt);
+    return dateCompare || a.sortOrder - b.sortOrder;
+  });
 }
