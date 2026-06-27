@@ -14,7 +14,6 @@ const priorityRank: Record<TaskPriority, number> = {
   low: 1,
   medium: 2,
   high: 3,
-  urgent: 4,
 };
 
 const importanceRank: Record<TaskImportance, number> = {

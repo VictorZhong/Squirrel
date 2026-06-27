@@ -11,7 +11,7 @@ describe("WorkspaceService", () => {
     const state = createInitialWorkspaceState("Work", new Date(2026, 5, 25, 12));
 
     expect(state.workspace.name).toBe("Work");
-    expect(state.workspace.schemaVersion).toBe(1);
+    expect(state.workspace.schemaVersion).toBe(2);
     expect(state.preferences.defaultView).toBe("dashboard");
     expect(state.projects).toHaveLength(1);
     expect(state.projects[0].name).toBe("Default");
@@ -22,7 +22,7 @@ describe("WorkspaceService", () => {
 
   it("declares required workspace directories", () => {
     expect(WORKSPACE_STRUCTURE_PATHS).toContain("projects");
-    expect(WORKSPACE_STRUCTURE_PATHS).toContain("inbox/attachments");
+    expect(WORKSPACE_STRUCTURE_PATHS).not.toContain("inbox");
     expect(WORKSPACE_STRUCTURE_PATHS).toContain("exports/markdown");
     expect(WORKSPACE_STRUCTURE_PATHS).toContain(".gtd-lite");
   });
@@ -37,6 +37,14 @@ describe("WorkspaceService", () => {
 
   it("enables global paste capture by default", () => {
     expect(createDefaultPreferences().globalPasteCaptureEnabled).toBe(true);
+  });
+
+  it("defaults to light theme with an overnight auto window", () => {
+    expect(createDefaultPreferences().theme).toEqual({
+      mode: "light",
+      darkStart: "20:00",
+      darkEnd: "07:00",
+    });
   });
 
   it("creates profile and tag defaults", () => {

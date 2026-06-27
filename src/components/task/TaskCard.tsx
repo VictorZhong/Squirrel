@@ -1,6 +1,6 @@
 import { Checkbox, Tag } from "antd";
-import { CalendarDays, Paperclip, UserRound } from "lucide-react";
-import { Task, priorityLabel } from "../../domain/models/types";
+import { CalendarDays, Paperclip, Star, UserRound, Zap } from "lucide-react";
+import { Task, importanceLabel, priorityLabel } from "../../domain/models/types";
 import { statusClassName } from "../../utils/taskDisplay";
 
 const VISIBLE_CARD_TAGS = 2;
@@ -31,7 +31,6 @@ export function TaskCard({
   isDragging,
 }: TaskCardProps) {
   const completedSubtasks = subtasks.filter((subtask) => subtask.status === "done").length;
-  const importanceMarks = "!".repeat(importanceWeight(task.importance));
   const showAssignee =
     Boolean(task.assignee) && (task.status === "waiting" || task.status === "blocked");
   const visibleTags = task.tags.slice(0, VISIBLE_CARD_TAGS);
@@ -61,19 +60,29 @@ export function TaskCard({
       <span className="task-card-title">{task.title}</span>
       <span className="task-card-meta-row">
         {task.dueDate ? (
-          <Tag variant="filled" icon={<CalendarDays size={12} />}>
+          <Tag
+            className="task-meta-badge due-badge"
+            variant="filled"
+            icon={<CalendarDays size={12} />}
+          >
             {formatCardDate(task.dueDate)}
           </Tag>
         ) : null}
         {task.priority !== "none" ? (
-          <Tag className={`priority-badge priority-${task.priority}`}>
+          <Tag
+            className={`task-meta-badge priority-badge priority-${task.priority}`}
+            icon={<Zap size={12} />}
+          >
             {priorityLabel[task.priority]}
           </Tag>
         ) : null}
-        {importanceMarks ? (
-          <span className="importance-marks" aria-label={`${task.importance} importance`}>
-            {importanceMarks}
-          </span>
+        {task.importance !== "none" ? (
+          <Tag
+            className={`task-meta-badge importance-badge importance-${task.importance}`}
+            icon={<Star size={12} fill="currentColor" />}
+          >
+            {importanceLabel[task.importance]}
+          </Tag>
         ) : null}
       </span>
       {visibleTags.length > 0 ? (
@@ -139,17 +148,4 @@ function formatCardDate(date: string): string {
     return date;
   }
   return `${Number(month)}/${Number(day)}`;
-}
-
-function importanceWeight(importance: Task["importance"]): number {
-  if (importance === "high") {
-    return 3;
-  }
-  if (importance === "medium") {
-    return 2;
-  }
-  if (importance === "low") {
-    return 1;
-  }
-  return 0;
 }

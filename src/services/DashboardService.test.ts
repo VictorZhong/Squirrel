@@ -4,7 +4,7 @@ import { createProject, createTask } from "../domain/rules/taskRules";
 import { calculateDashboard } from "./DashboardService";
 
 describe("calculateDashboard", () => {
-  it("groups due, blocked, waiting, and inbox tasks", () => {
+  it("groups due, blocked, waiting, and todo tasks", () => {
     const today = new Date(2026, 5, 25, 12);
     const project = createProject({ name: "Core" }, today);
     const tasks: Task[] = [
@@ -28,7 +28,7 @@ describe("calculateDashboard", () => {
       }),
       createTask({ title: "Blocked", projectId: project.id, status: "blocked" }),
       createTask({ title: "Waiting", projectId: project.id, status: "waiting" }),
-      createTask({ title: "Inbox", status: "inbox" }),
+      createTask({ title: "Todo", projectId: project.id, status: "todo" }),
       createTask({
         title: "Subtask ignored",
         parentTaskId: "task_parent",
@@ -44,8 +44,8 @@ describe("calculateDashboard", () => {
     expect(dashboard.dueSoon.count).toBe(1);
     expect(dashboard.blocked.count).toBe(1);
     expect(dashboard.waiting.count).toBe(1);
-    expect(dashboard.inbox.count).toBe(1);
-    expect(dashboard.projects[0].active).toBe(5);
+    expect(dashboard.todo.count).toBe(4);
+    expect(dashboard.projects[0].active).toBe(6);
   });
 
   it("calculates project progress from done tasks", () => {

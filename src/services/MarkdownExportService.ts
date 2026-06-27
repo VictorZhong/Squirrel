@@ -15,8 +15,8 @@ export function generateMarkdownExports(
 
   return [
     {
-      path: ["exports", "markdown", "inbox.md"],
-      content: renderTaskList("Inbox", dashboard.inbox.tasks),
+      path: ["exports", "markdown", "todo.md"],
+      content: renderTaskList("Todo", dashboard.todo.tasks),
     },
     {
       path: ["exports", "markdown", "waiting.md"],

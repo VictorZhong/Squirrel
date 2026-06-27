@@ -1,14 +1,18 @@
 import { Project } from "./types";
 
 export const PROJECT_COLOR_OPTIONS = [
-  { label: "Sky", value: "#bfdbfe" },
-  { label: "Mint", value: "#bbf7d0" },
-  { label: "Amber", value: "#fde68a" },
-  { label: "Coral", value: "#fecaca" },
-  { label: "Lavender", value: "#ddd6fe" },
-  { label: "Peach", value: "#fed7aa" },
+  { label: "Ice", value: "#bae6fd" },
+  { label: "Azure", value: "#bfdbfe" },
+  { label: "Cyan", value: "#a5f3fc" },
   { label: "Teal", value: "#99f6e4" },
-  { label: "Rose", value: "#fbcfe8" },
+  { label: "Jade", value: "#a7f3d0" },
+  { label: "Lime", value: "#d9f99d" },
+  { label: "Ruby", value: "#fda4af" },
+  { label: "Pink", value: "#f9a8d4" },
+  { label: "Fuchsia", value: "#f0abfc" },
+  { label: "Violet", value: "#c4b5fd" },
+  { label: "Stone", value: "#d6d3d1" },
+  { label: "Slate", value: "#cbd5e1" },
 ] as const;
 
 export const PROJECT_COLOR_VALUES: readonly string[] = PROJECT_COLOR_OPTIONS.map(

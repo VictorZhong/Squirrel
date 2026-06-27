@@ -34,7 +34,7 @@ export interface CreateProjectInput {
 
 export function createTask(input: CreateTaskInput, now = new Date()): Task {
   const timestamp = now.toISOString();
-  const status = input.status ?? (input.projectId ? "todo" : "inbox");
+  const status = input.status ?? "todo";
 
   return {
     id: createId("task"),

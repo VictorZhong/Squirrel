@@ -30,10 +30,10 @@ On first launch, choose or create a local workspace folder. Squirrel writes data
 workspace.json
 preferences.json
 projects/
-inbox/
 archive/
 exports/markdown/
 .gtd-lite/
 ```
 
 Browser storage is only used for small app-level preferences such as recent workspace metadata.
+Older workspaces may still contain `inbox/`; Squirrel reads it during migration and moves those tasks into the default project's Todo status.

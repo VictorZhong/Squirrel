@@ -41,7 +41,8 @@ export function TaskList({ tasks, projects, onOpenTask }: TaskListProps) {
       dataIndex: "projectId",
       key: "projectId",
       width: 180,
-      render: (projectId?: string) => projectId ? projectNames.get(projectId) ?? "Unknown" : "Inbox",
+      render: (projectId?: string) =>
+        projectId ? projectNames.get(projectId) ?? "Unknown" : "Unassigned",
     },
     {
       title: "Due",

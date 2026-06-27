@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Button,
+  ConfigProvider,
   Empty,
   Input,
   Layout,
@@ -11,9 +12,11 @@ import {
   Select,
   Space,
   Switch,
+  TimePicker,
   Tooltip,
   Typography,
   App as AntApp,
+  theme as antdTheme,
 } from "antd";
 import type { MenuProps } from "antd";
 import {
@@ -40,9 +43,10 @@ import {
   FolderKanban,
   GripVertical,
   History,
-  Inbox,
+  ListChecks,
   LayoutDashboard,
   ListTodo,
+  Moon,
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
@@ -51,9 +55,11 @@ import {
   Search,
   Settings,
   ShieldCheck,
+  Sun,
   Trash2,
   TimerReset,
 } from "lucide-react";
+import dayjs from "dayjs";
 import { appConfig } from "./config/appConfig";
 import {
   PROJECT_COLOR_OPTIONS,
@@ -74,6 +80,7 @@ import {
   Project,
   RecentWorkspace,
   Task,
+  WorkspaceThemePreferences,
   WorkspaceState,
   statusLabel,
 } from "./domain/models/types";
@@ -99,14 +106,24 @@ import {
 import { parentTasks, sortTasksForDisplay } from "./utils/taskDisplay";
 import { filterTasksBySearch } from "./utils/taskSearch";
 import { filterTasksByTags } from "./utils/taskTags";
+import {
+  EffectiveTheme,
+  resolveWorkspaceTheme,
+} from "./utils/themePreference";
 
 const { Sider, Content } = Layout;
 const CLIPBOARD_TASK_TITLE_LIMIT = 120;
+const DEFAULT_THEME_PREFERENCES: WorkspaceThemePreferences = {
+  mode: "light",
+  darkStart: "20:00",
+  darkEnd: "07:00",
+};
+const CLOCK_TIME_FORMAT = "HH:mm";
 
 type RouteKey =
   | "dashboard"
   | "all"
-  | "inbox"
+  | "todo"
   | "overdue"
   | "today"
   | "upcoming"
@@ -118,6 +135,58 @@ type RouteKey =
   | `project:${string}`;
 
 type ViewMode = "board" | "list";
+
+function useEffectiveWorkspaceTheme(
+  preferences?: WorkspaceThemePreferences,
+): EffectiveTheme {
+  const resolvedPreferences = preferences ?? DEFAULT_THEME_PREFERENCES;
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    setNow(new Date());
+  }, [
+    resolvedPreferences.mode,
+    resolvedPreferences.darkStart,
+    resolvedPreferences.darkEnd,
+  ]);
+
+  useEffect(() => {
+    if (resolvedPreferences.mode !== "auto") {
+      return;
+    }
+
+    const interval = window.setInterval(() => setNow(new Date()), 30_000);
+    return () => window.clearInterval(interval);
+  }, [
+    resolvedPreferences.mode,
+    resolvedPreferences.darkStart,
+    resolvedPreferences.darkEnd,
+  ]);
+
+  return useMemo(
+    () => resolveWorkspaceTheme(resolvedPreferences, now),
+    [resolvedPreferences, now],
+  );
+}
+
+function createAntdThemeConfig(effectiveTheme: EffectiveTheme) {
+  return {
+    algorithm:
+      effectiveTheme === "dark"
+        ? antdTheme.darkAlgorithm
+        : antdTheme.defaultAlgorithm,
+    token: {
+      colorPrimary: "#f97316",
+      borderRadius: 8,
+      fontFamily:
+        'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    },
+  };
+}
+
+function clockTimeValue(value: string) {
+  return dayjs(`2026-01-01T${value}:00`);
+}
 
 export default function App() {
   const { message } = AntApp.useApp();
@@ -181,6 +250,15 @@ export default function App() {
       : hasTaskFilters
         ? `${visibleTaskCount}/${pageTasks.length} tasks`
         : `${pageTasks.length} tasks`;
+  const effectiveTheme = useEffectiveWorkspaceTheme(state?.preferences.theme);
+  const antdThemeConfig = useMemo(
+    () => createAntdThemeConfig(effectiveTheme),
+    [effectiveTheme],
+  );
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = effectiveTheme;
+  }, [effectiveTheme]);
 
   useEffect(() => {
     let cancelled = false;
@@ -382,13 +460,13 @@ export default function App() {
     const task = createTask({
       title,
       projectId,
-      status: "inbox",
-      sortOrder: firstSortOrder(state.tasks, "inbox", projectId),
+      status: "todo",
+      sortOrder: firstSortOrder(state.tasks, "todo", projectId),
     });
 
     const nextState = await persistTask(task);
     if (nextState) {
-      void message.success(task.status === "inbox" ? "Task added to Inbox" : "Task created");
+      void message.success("Task created");
       setSelectedTaskId(task.id);
     }
   }
@@ -406,13 +484,13 @@ export default function App() {
       title: content.title,
       description: content.description,
       projectId,
-      status: "inbox",
-      sortOrder: firstSortOrder(state.tasks, "inbox", projectId),
+      status: "todo",
+      sortOrder: firstSortOrder(state.tasks, "todo", projectId),
     });
 
     const nextState = await persistTask(task);
     if (nextState) {
-      void message.success(task.status === "inbox" ? "Task added to Inbox" : "Task created");
+      void message.success("Task created");
       setSelectedTaskId(task.id);
     }
   }
@@ -430,8 +508,8 @@ export default function App() {
       title: title || createScreenshotTaskTitle(),
       description,
       projectId,
-      status: "inbox",
-      sortOrder: firstSortOrder(state.tasks, "inbox", projectId),
+      status: "todo",
+      sortOrder: firstSortOrder(state.tasks, "todo", projectId),
     });
 
     let updatedTask = baseTask;
@@ -442,9 +520,7 @@ export default function App() {
 
     const nextState = await persistTask(updatedTask);
     if (nextState) {
-      void message.success(
-        updatedTask.status === "inbox" ? "Task added to Inbox" : "Task created",
-      );
+      void message.success("Task created");
       setSelectedTaskId(updatedTask.id);
     }
   }
@@ -453,7 +529,7 @@ export default function App() {
     const previous = state?.tasks.find((item) => item.id === task.id);
     const nextState = await persistTask(task, previous);
     if (nextState && options?.notify !== false) {
-      void message.success(taskSaveSuccessText(task, previous));
+      void message.success(taskSaveSuccessText(previous));
     }
     return Boolean(nextState);
   }
@@ -697,6 +773,29 @@ export default function App() {
     }
   }
 
+  async function handleSaveTheme(themePreferences: WorkspaceThemePreferences) {
+    if (!state || !repository) {
+      return;
+    }
+
+    const nextState = {
+      ...state,
+      preferences: {
+        ...state.preferences,
+        theme: themePreferences,
+      },
+    };
+    setState(nextState);
+    try {
+      await repository.savePreferences(nextState);
+    } catch (error) {
+      setState(state);
+      void message.error(
+        error instanceof Error ? error.message : "Failed to save appearance preference",
+      );
+    }
+  }
+
   async function handleCreateTag(tag: string) {
     await handleRegisterTags([tag]);
   }
@@ -847,13 +946,15 @@ export default function App() {
 
   if (!state || !repository) {
     return (
-      <WorkspaceGate
-        supported={LocalWorkspaceRepository.isSupported()}
-        loading={isOpening}
-        recentWorkspaces={recentWorkspaces}
-        onOpenWorkspace={openWorkspace}
-        onOpenRecentWorkspace={openRecentWorkspace}
-      />
+      <ConfigProvider theme={antdThemeConfig}>
+        <WorkspaceGate
+          supported={LocalWorkspaceRepository.isSupported()}
+          loading={isOpening}
+          recentWorkspaces={recentWorkspaces}
+          onOpenWorkspace={openWorkspace}
+          onOpenRecentWorkspace={openRecentWorkspace}
+        />
+      </ConfigProvider>
     );
   }
 
@@ -866,13 +967,14 @@ export default function App() {
     boardCapable && viewMode === "board" ? boardTasks : searchedPageTasks;
 
   return (
-    <Layout className="app-layout">
-      <Sider
-        width={264}
-        collapsedWidth={92}
-        collapsed={sidebarCollapsed}
-        className="app-sidebar"
-      >
+    <ConfigProvider theme={antdThemeConfig}>
+      <Layout className="app-layout">
+        <Sider
+          width={264}
+          collapsedWidth={92}
+          collapsed={sidebarCollapsed}
+          className="app-sidebar"
+        >
         <div className="brand-block">
           <UserAvatar profile={state.preferences.userProfile} size={36} />
           {!sidebarCollapsed ? (
@@ -943,6 +1045,7 @@ export default function App() {
               onSaveProfile={handleSaveProfile}
               onSaveDefaultProject={handleSaveDefaultProject}
               onSaveGlobalPasteCaptureEnabled={handleSaveGlobalPasteCaptureEnabled}
+              onSaveTheme={handleSaveTheme}
               onCreateTag={handleCreateTag}
               onDeleteTag={handleDeleteTag}
             />
@@ -1115,7 +1218,8 @@ export default function App() {
           </div>
         </div>
       </Modal>
-    </Layout>
+      </Layout>
+    </ConfigProvider>
   );
 }
 
@@ -1199,6 +1303,7 @@ function SettingsView({
   onSaveProfile,
   onSaveDefaultProject,
   onSaveGlobalPasteCaptureEnabled,
+  onSaveTheme,
   onCreateTag,
   onDeleteTag,
 }: {
@@ -1209,6 +1314,7 @@ function SettingsView({
   onSaveProfile: (nickname: string, avatarPresetId?: string) => Promise<void>;
   onSaveDefaultProject: (defaultProjectId: string) => Promise<void>;
   onSaveGlobalPasteCaptureEnabled: (enabled: boolean) => Promise<void>;
+  onSaveTheme: (themePreferences: WorkspaceThemePreferences) => Promise<void>;
   onCreateTag: (tag: string) => Promise<void>;
   onDeleteTag: (tag: string) => Promise<void>;
 }) {
@@ -1263,6 +1369,96 @@ function SettingsView({
               <UserAvatar profile={{ nickname, avatarPresetId: preset.id }} size={42} />
             </button>
           ))}
+        </div>
+      </section>
+
+      <section className="settings-panel">
+        <div className="section-heading">
+          <h2>Appearance</h2>
+          <span>
+            {resolveWorkspaceTheme(state.preferences.theme) === "dark"
+              ? "Dark"
+              : "Light"}
+          </span>
+        </div>
+        <div className="settings-field">
+          <span>Mode</span>
+          <Segmented
+            value={state.preferences.theme.mode}
+            onChange={(mode) =>
+              void onSaveTheme({
+                ...state.preferences.theme,
+                mode: mode as WorkspaceThemePreferences["mode"],
+              })
+            }
+            options={[
+              {
+                value: "light",
+                label: (
+                  <span className="segmented-icon-label">
+                    <Sun size={14} />
+                    Light
+                  </span>
+                ),
+              },
+              {
+                value: "dark",
+                label: (
+                  <span className="segmented-icon-label">
+                    <Moon size={14} />
+                    Dark
+                  </span>
+                ),
+              },
+              {
+                value: "auto",
+                label: (
+                  <span className="segmented-icon-label">
+                    <Clock3 size={14} />
+                    Auto
+                  </span>
+                ),
+              },
+            ]}
+          />
+        </div>
+        <div className="settings-time-grid">
+          <div className="settings-field">
+            <span>Dark start</span>
+            <TimePicker
+              className="full-width-control"
+              format={CLOCK_TIME_FORMAT}
+              minuteStep={15}
+              value={clockTimeValue(state.preferences.theme.darkStart)}
+              disabled={state.preferences.theme.mode !== "auto"}
+              onChange={(time) =>
+                void onSaveTheme({
+                  ...state.preferences.theme,
+                  darkStart: time
+                    ? time.format(CLOCK_TIME_FORMAT)
+                    : state.preferences.theme.darkStart,
+                })
+              }
+            />
+          </div>
+          <div className="settings-field">
+            <span>Dark end</span>
+            <TimePicker
+              className="full-width-control"
+              format={CLOCK_TIME_FORMAT}
+              minuteStep={15}
+              value={clockTimeValue(state.preferences.theme.darkEnd)}
+              disabled={state.preferences.theme.mode !== "auto"}
+              onChange={(time) =>
+                void onSaveTheme({
+                  ...state.preferences.theme,
+                  darkEnd: time
+                    ? time.format(CLOCK_TIME_FORMAT)
+                    : state.preferences.theme.darkEnd,
+                })
+              }
+            />
+          </div>
         </div>
       </section>
 
@@ -1572,8 +1768,8 @@ function SortableProjectNavItem({
 function createMenuItems(): MenuProps["items"] {
   return [
     { key: "dashboard", icon: <LayoutDashboard size={16} />, label: "Dashboard" },
-    { key: "inbox", icon: <Inbox size={16} />, label: "Inbox" },
-    { key: "all", icon: <ListTodo size={16} />, label: "All Tasks" },
+    { key: "all", icon: <ListChecks size={16} />, label: "All Tasks" },
+    { key: "todo", icon: <ListTodo size={16} />, label: statusLabel.todo },
     { key: "overdue", icon: <AlertCircle size={16} />, label: "Overdue" },
     { key: "today", icon: <TimerReset size={16} />, label: "Today" },
     { key: "upcoming", icon: <CalendarDays size={16} />, label: "Upcoming" },
@@ -1626,7 +1822,7 @@ function getRouteTitle(route: RouteKey, projects: Project[]): string {
   const titles: Record<Exclude<RouteKey, `project:${string}`>, string> = {
     dashboard: "Dashboard",
     all: "All Tasks",
-    inbox: "Inbox",
+    todo: "Todo",
     overdue: "Overdue",
     today: "Today",
     upcoming: "Upcoming",
@@ -1656,8 +1852,8 @@ function getRouteTasks(route: RouteKey, state: WorkspaceState): Task[] {
     case "dashboard":
     case "all":
       return tasks;
-    case "inbox":
-      return tasks.filter((task) => task.status === "inbox");
+    case "todo":
+      return tasks.filter((task) => task.status === "todo");
     case "overdue":
       return tasks.filter(
         (task) => task.dueDate && task.status !== "done" && task.dueDate < today,
@@ -1684,7 +1880,7 @@ function getRouteTasks(route: RouteKey, state: WorkspaceState): Task[] {
 }
 
 function isBoardCapableRoute(route: RouteKey): boolean {
-  return route === "all" || route === "inbox" || route.startsWith("project:");
+  return route === "all" || route.startsWith("project:");
 }
 
 function isTaskViewRoute(route: RouteKey): boolean {
@@ -1704,7 +1900,9 @@ function getDefaultTaskProjectId(
     (project) => project.id === candidate && project.status !== "archived",
   )
     ? candidate
-    : undefined;
+    : state.projects
+        .filter((project) => project.status !== "archived")
+        .sort((a, b) => a.sortOrder - b.sortOrder)[0]?.id;
 }
 
 function collectTaskTree(taskId: string, tasks: Task[]): Task[] {
@@ -1789,13 +1987,9 @@ function mergeTags(existing: string[], incoming: string[]): string[] {
   return Array.from(byLower.values()).sort((a, b) => a.localeCompare(b));
 }
 
-function taskSaveSuccessText(task: Task, previous?: Task): string {
+function taskSaveSuccessText(previous?: Task): string {
   if (!previous) {
-    return task.status === "inbox" ? "Task added to Inbox" : "Task created";
-  }
-
-  if (task.status === "inbox" && previous.status !== "inbox") {
-    return "Task moved to Inbox";
+    return "Task created";
   }
 
   return "Task updated";

@@ -1,9 +1,8 @@
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export type ProjectStatus = "active" | "paused" | "completed" | "archived";
 
 export type TaskStatus =
-  | "inbox"
   | "todo"
   | "in_progress"
   | "waiting"
@@ -13,14 +12,13 @@ export type TaskStatus =
   | "archived";
 
 export type BoardTaskStatus =
-  | "inbox"
   | "todo"
   | "in_progress"
   | "waiting"
   | "blocked"
   | "done";
 
-export type TaskPriority = "none" | "low" | "medium" | "high" | "urgent";
+export type TaskPriority = "none" | "low" | "medium" | "high";
 
 export type TaskImportance = "none" | "low" | "medium" | "high";
 
@@ -32,7 +30,14 @@ export type WorkspaceView = "dashboard" | "kanban" | "list";
 
 export type TaskSortMode = "manual" | "dueDate" | "priority";
 
-export type AppTheme = "system" | "light" | "dark";
+export type WorkspaceThemeMode = "light" | "dark" | "auto";
+export type AppTheme = WorkspaceThemeMode;
+
+export interface WorkspaceThemePreferences {
+  mode: WorkspaceThemeMode;
+  darkStart: string;
+  darkEnd: string;
+}
 
 export interface Workspace {
   id: string;
@@ -100,6 +105,7 @@ export interface WorkspacePreferences {
   globalPasteCaptureEnabled: boolean;
   screenshotTaskDefaultProjectId?: string;
   taskSortMode: TaskSortMode;
+  theme: WorkspaceThemePreferences;
   userProfile: UserProfile;
   tags: string[];
 }
@@ -125,6 +131,7 @@ export interface WorkspaceState {
 export type ActivityAction =
   | "workspace.initialized"
   | "workspace.loaded"
+  | "workspace.migrated"
   | "workspace.preferencesUpdated"
   | "project.created"
   | "project.updated"
@@ -198,12 +205,11 @@ export interface DashboardSummary {
   dueSoon: DashboardBucket;
   blocked: DashboardBucket;
   waiting: DashboardBucket;
-  inbox: DashboardBucket;
+  todo: DashboardBucket;
   projects: ProjectDashboardItem[];
 }
 
 export const BOARD_STATUSES: BoardTaskStatus[] = [
-  "inbox",
   "todo",
   "in_progress",
   "waiting",
@@ -212,7 +218,6 @@ export const BOARD_STATUSES: BoardTaskStatus[] = [
 ];
 
 export const TASK_STATUSES: TaskStatus[] = [
-  "inbox",
   "todo",
   "in_progress",
   "waiting",
@@ -227,7 +232,6 @@ export const TASK_PRIORITIES: TaskPriority[] = [
   "low",
   "medium",
   "high",
-  "urgent",
 ];
 
 export const TASK_IMPORTANCES: TaskImportance[] = [
@@ -238,7 +242,6 @@ export const TASK_IMPORTANCES: TaskImportance[] = [
 ];
 
 export const statusLabel: Record<TaskStatus, string> = {
-  inbox: "Inbox",
   todo: "Todo",
   in_progress: "In Progress",
   waiting: "Waiting",
@@ -253,7 +256,6 @@ export const priorityLabel: Record<TaskPriority, string> = {
   low: "Low",
   medium: "Medium",
   high: "High",
-  urgent: "Urgent",
 };
 
 export const importanceLabel: Record<TaskImportance, string> = {

@@ -11,8 +11,6 @@ import { randomProjectColor } from "../domain/models/projectColors";
 
 export const WORKSPACE_STRUCTURE_PATHS = [
   "projects",
-  "inbox",
-  "inbox/attachments",
   "archive",
   "exports",
   "exports/markdown",
@@ -44,6 +42,11 @@ export function createDefaultPreferences(): WorkspacePreferences {
     showProjectNameOnBoard: true,
     globalPasteCaptureEnabled: true,
     taskSortMode: "manual",
+    theme: {
+      mode: "light",
+      darkStart: "20:00",
+      darkEnd: "07:00",
+    },
     userProfile: {
       nickname: "Local user",
     },

@@ -26,7 +26,7 @@ export function filterTasksBySearch(
       task.status,
       task.priority,
       task.importance,
-      task.projectId ? projectNames.get(task.projectId) : "Inbox",
+      task.projectId ? projectNames.get(task.projectId) : "Unassigned",
       ...task.tags,
     ]
       .filter(Boolean)

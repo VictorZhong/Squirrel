@@ -1,5 +1,5 @@
 import { Button, Progress, Tag } from "antd";
-import { AlertCircle, CalendarClock, CirclePause, Inbox, TimerReset } from "lucide-react";
+import { AlertCircle, CalendarClock, CirclePause, ListTodo, TimerReset } from "lucide-react";
 import dayjs from "dayjs";
 import { DashboardSummary, Project, Task } from "../../domain/models/types";
 import { getTaskProjectColor, getTaskProjectName } from "../../utils/projectDisplay";
@@ -19,7 +19,7 @@ interface DashboardViewProps {
       | "upcoming"
       | "blocked"
       | "waiting"
-      | "inbox"
+      | "todo"
       | "timeline",
   ) => void;
 }
@@ -46,7 +46,7 @@ export function DashboardView({
     },
     { label: "Blocked", value: dashboard.blocked.count, icon: CirclePause, route: "blocked" },
     { label: "Waiting", value: dashboard.waiting.count, icon: CirclePause, route: "waiting" },
-    { label: "Inbox", value: dashboard.inbox.count, icon: Inbox, route: "inbox" },
+    { label: "Todo", value: dashboard.todo.count, icon: ListTodo, route: "todo" },
   ];
 
   return (

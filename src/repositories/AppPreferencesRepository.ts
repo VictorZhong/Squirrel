@@ -4,7 +4,7 @@ const STORAGE_KEY = "squirrel.appPreferences.v1";
 
 const defaultPreferences: AppPreferences = {
   recentWorkspaces: [],
-  theme: "system",
+  theme: "light",
 };
 
 export function loadAppPreferences(): AppPreferences {
@@ -15,7 +15,7 @@ export function loadAppPreferences(): AppPreferences {
     }
     const parsed = JSON.parse(raw) as Partial<AppPreferences>;
     return {
-      theme: parsed.theme ?? "system",
+      theme: parseTheme(parsed.theme),
       recentWorkspaces: Array.isArray(parsed.recentWorkspaces)
         ? parsed.recentWorkspaces.slice(0, 10)
         : [],
@@ -40,4 +40,10 @@ export function rememberWorkspace(workspace: RecentWorkspace): AppPreferences {
   };
   saveAppPreferences(next);
   return next;
+}
+
+function parseTheme(value: unknown): AppPreferences["theme"] {
+  return ["light", "dark", "auto"].includes(String(value))
+    ? (value as AppPreferences["theme"])
+    : defaultPreferences.theme;
 }

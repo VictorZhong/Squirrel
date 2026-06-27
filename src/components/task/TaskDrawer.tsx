@@ -195,13 +195,11 @@ export function TaskDrawer({
           </Field>
           <Field label="Project">
             <Select
-              allowClear
               value={draft.projectId}
-              placeholder="Inbox"
+              placeholder="Select project"
               onChange={(projectId) =>
                 update({
                   projectId,
-                  status: projectId ? draft.status : "inbox",
                 })
               }
               options={activeProjects.map((project) => ({

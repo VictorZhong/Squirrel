@@ -1,13 +1,13 @@
 import {
   Attachment,
   Project,
-  SCHEMA_VERSION,
   Task,
   TASK_IMPORTANCES,
   TASK_PRIORITIES,
   TASK_STATUSES,
   Workspace,
   WorkspacePreferences,
+  WorkspaceThemePreferences,
 } from "../domain/models/types";
 import { createDefaultPreferences } from "./WorkspaceService";
 
@@ -21,7 +21,7 @@ export function parseWorkspace(value: unknown): Workspace {
     id: expectString(record.id, "workspace.id"),
     name: expectString(record.name, "workspace.name"),
     schemaVersion:
-      typeof record.schemaVersion === "number" ? record.schemaVersion : SCHEMA_VERSION,
+      typeof record.schemaVersion === "number" ? record.schemaVersion : 1,
     createdAt: expectString(record.createdAt, "workspace.createdAt"),
     updatedAt: expectString(record.updatedAt, "workspace.updatedAt"),
   };
@@ -50,13 +50,7 @@ export function parsePreferences(value: unknown): WorkspacePreferences {
     tags: Array.isArray(value.tags)
       ? normalizeTags(value.tags.map(String))
       : defaults.tags,
-    boardColumns: Array.isArray(value.boardColumns)
-      ? value.boardColumns.filter((status) =>
-          ["inbox", "todo", "in_progress", "waiting", "blocked", "done"].includes(
-            String(status),
-          ),
-        )
-      : defaults.boardColumns,
+    boardColumns: parseBoardColumns(value.boardColumns, defaults.boardColumns),
     dueSoonDays: optionalNumber(value.dueSoonDays) ?? defaults.dueSoonDays,
     autoArchiveDoneAfterDays:
       optionalNumber(value.autoArchiveDoneAfterDays) ?? defaults.autoArchiveDoneAfterDays,
@@ -77,6 +71,7 @@ export function parsePreferences(value: unknown): WorkspacePreferences {
       ["manual", "dueDate", "priority"].includes(String(value.taskSortMode))
         ? (value.taskSortMode as WorkspacePreferences["taskSortMode"])
         : defaults.taskSortMode,
+    theme: parseWorkspaceTheme(value.theme, defaults.theme),
   };
 }
 
@@ -107,12 +102,8 @@ export function parseTask(value: unknown): Task {
     title: expectString(record.title, "task.title"),
     description: optionalString(record.description),
     assignee: optionalString(record.assignee),
-    status: TASK_STATUSES.includes(record.status as Task["status"])
-      ? (record.status as Task["status"])
-      : "inbox",
-    priority: TASK_PRIORITIES.includes(record.priority as Task["priority"])
-      ? (record.priority as Task["priority"])
-      : "none",
+    status: parseTaskStatus(record.status),
+    priority: parseTaskPriority(record.priority),
     importance: TASK_IMPORTANCES.includes(record.importance as Task["importance"])
       ? (record.importance as Task["importance"])
       : "none",
@@ -127,6 +118,70 @@ export function parseTask(value: unknown): Task {
     createdAt: expectString(record.createdAt, "task.createdAt"),
     updatedAt: expectString(record.updatedAt, "task.updatedAt"),
   };
+}
+
+function parseTaskPriority(value: unknown): Task["priority"] {
+  if (value === "urgent") {
+    return "high";
+  }
+  return TASK_PRIORITIES.includes(value as Task["priority"])
+    ? (value as Task["priority"])
+    : "none";
+}
+
+function parseTaskStatus(value: unknown): Task["status"] {
+  if (value === "inbox") {
+    return "todo";
+  }
+  return TASK_STATUSES.includes(value as Task["status"])
+    ? (value as Task["status"])
+    : "todo";
+}
+
+function parseBoardColumns(
+  value: unknown,
+  defaults: WorkspacePreferences["boardColumns"],
+): WorkspacePreferences["boardColumns"] {
+  if (!Array.isArray(value)) {
+    return defaults;
+  }
+
+  const allowed = new Set(["todo", "in_progress", "waiting", "blocked", "done"]);
+  const columns = Array.from(
+    new Set(
+      value
+        .map((status) => (status === "inbox" ? "todo" : String(status)))
+        .filter((status) => allowed.has(status)),
+    ),
+  ) as WorkspacePreferences["boardColumns"];
+
+  return columns.length > 0 ? columns : defaults;
+}
+
+function parseWorkspaceTheme(
+  value: unknown,
+  defaults: WorkspaceThemePreferences,
+): WorkspaceThemePreferences {
+  if (!isRecord(value)) {
+    return defaults;
+  }
+
+  const mode = ["light", "dark", "auto"].includes(String(value.mode))
+    ? (value.mode as WorkspaceThemePreferences["mode"])
+    : defaults.mode;
+
+  return {
+    mode,
+    darkStart: parseClockTime(value.darkStart, defaults.darkStart),
+    darkEnd: parseClockTime(value.darkEnd, defaults.darkEnd),
+  };
+}
+
+function parseClockTime(value: unknown, fallback: string): string {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(value) ? value : fallback;
 }
 
 function parseAttachment(value: unknown): Attachment {

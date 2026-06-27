@@ -21,6 +21,7 @@ import {
   WORKSPACE_STRUCTURE_PATHS,
   createInitialWorkspaceState,
 } from "../services/WorkspaceService";
+import { migrateWorkspaceState } from "../services/WorkspaceMigrationService";
 import {
   MarkdownExportFile,
   generateMarkdownExports,
@@ -105,12 +106,29 @@ export class LocalWorkspaceRepository {
     const projects = await this.readProjects();
     const tasks = await this.readTasks(projects);
 
-    return {
+    const state = {
       workspace,
       preferences,
       projects: projects.sort((a, b) => a.sortOrder - b.sortOrder),
       tasks: tasks.sort((a, b) => a.sortOrder - b.sortOrder),
     };
+    const migration = migrateWorkspaceState(state);
+
+    if (!migration.changed) {
+      return migration.state;
+    }
+
+    await this.writeMigratedState(migration.state, migration.previousTasks);
+    await this.appendActivity(
+      "workspace.migrated",
+      "workspace",
+      migration.state.workspace.id,
+      {
+        fromSchemaVersion: workspace.schemaVersion,
+        toSchemaVersion: SCHEMA_VERSION,
+      },
+    );
+    return migration.state;
   }
 
   async saveProject(
@@ -340,6 +358,32 @@ export class LocalWorkspaceRepository {
     if (previousPath && previousPath.join("/") !== nextPath.join("/")) {
       await this.removeFile(previousPath);
     }
+  }
+
+  private async writeMigratedState(
+    state: WorkspaceState,
+    previousTasks: Map<string, Task>,
+  ): Promise<void> {
+    for (const path of WORKSPACE_STRUCTURE_PATHS) {
+      await this.ensureDirectoryPath(path.split("/"));
+    }
+
+    await this.writeJson(["workspace.json"], state.workspace);
+    await this.writeJson(["preferences.json"], state.preferences);
+    await this.writeJson([".gtd-lite", "schema-version.json"], {
+      schemaVersion: SCHEMA_VERSION,
+    });
+
+    for (const project of state.projects) {
+      await this.ensureDirectoryPath(["projects", project.id, "tasks"]);
+      await this.ensureDirectoryPath(["projects", project.id, "attachments"]);
+      await this.writeJson(["projects", project.id, "project.json"], project);
+    }
+
+    await Promise.all(
+      state.tasks.map((task) => this.writeTask(task, previousTasks.get(task.id))),
+    );
+    await this.writeDerivedFiles(state);
   }
 
   private async appendTaskActivity(task: Task, previous?: Task): Promise<void> {

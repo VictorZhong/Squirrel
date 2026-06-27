@@ -101,7 +101,7 @@ export function TimelineView({
                   <span className="timeline-task-main">
                     <span>{task.title}</span>
                     <small>
-                      {task.projectId ? projectNames.get(task.projectId) ?? "Project" : "Inbox"}
+                      {task.projectId ? projectNames.get(task.projectId) ?? "Project" : "Unassigned"}
                       {` · ${formatTime(getTimelineDate(task, mode))}`}
                     </small>
                     {task.tags.length > 0 ? (

@@ -31,7 +31,7 @@ export function calculateDashboard(
   );
   const blockedTasks = activeParentTasks.filter((task) => task.status === "blocked");
   const waitingTasks = activeParentTasks.filter((task) => task.status === "waiting");
-  const inboxTasks = activeParentTasks.filter((task) => task.status === "inbox");
+  const todoTasks = activeParentTasks.filter((task) => task.status === "todo");
 
   return {
     overdue: bucket(overdueTasks),
@@ -39,7 +39,7 @@ export function calculateDashboard(
     dueSoon: bucket(dueSoonTasks),
     blocked: bucket(blockedTasks),
     waiting: bucket(waitingTasks),
-    inbox: bucket(inboxTasks),
+    todo: bucket(todoTasks),
     projects: projects
       .filter((project) => project.status !== "archived")
       .sort((a, b) => a.sortOrder - b.sortOrder)
