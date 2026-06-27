@@ -34,7 +34,9 @@ import {
   statusLabel,
 } from "../../domain/models/types";
 import { applyTaskStatus } from "../../domain/rules/taskRules";
+import { normalizeAssigneeName } from "../../utils/assignees";
 import { normalizeTaskTags } from "../../utils/taskTags";
+import { MarkdownDescriptionEditor } from "./MarkdownDescriptionEditor";
 
 interface TaskDrawerProps {
   open: boolean;
@@ -42,12 +44,14 @@ interface TaskDrawerProps {
   subtasks: Task[];
   projects: Project[];
   availableTags: string[];
+  availableAssignees: string[];
   resolveAttachmentUrl: (attachment: Attachment) => Promise<string>;
   onClose: () => void;
   onSave: (task: Task, options?: { notify?: boolean }) => Promise<boolean>;
   onAttachFiles: (task: Task, files: File[]) => Promise<Task>;
   onDeleteAttachment: (task: Task, attachment: Attachment) => Promise<Task>;
   onRegisterTags: (tags: string[]) => Promise<void>;
+  onRegisterAssignees: (assignees: string[]) => Promise<void>;
   onCreateSubtask: (parent: Task, title: string) => Promise<void>;
   onPromoteSubtask: (task: Task) => Promise<void>;
   onDeleteTask: (task: Task) => Promise<boolean>;
@@ -59,12 +63,14 @@ export function TaskDrawer({
   subtasks,
   projects,
   availableTags,
+  availableAssignees,
   resolveAttachmentUrl,
   onClose,
   onSave,
   onAttachFiles,
   onDeleteAttachment,
   onRegisterTags,
+  onRegisterAssignees,
   onCreateSubtask,
   onPromoteSubtask,
   onDeleteTask,
@@ -90,17 +96,25 @@ export function TaskDrawer({
 
   const currentTask = draft;
 
-  async function save(next: Task = currentTask) {
+  async function save(
+    next: Task = currentTask,
+    options: { closeDrawer?: boolean; notify?: boolean } = {},
+  ): Promise<boolean> {
     const nextTask = {
       ...next,
+      assignee: normalizeAssigneeName(next.assignee),
       tags: normalizeTaskTags(next.tags),
     };
     setIsSaving(true);
     try {
-      const saved = await onSave(nextTask);
+      const saved = await onSave(nextTask, { notify: options.notify });
       if (saved) {
+        setDraft(nextTask);
+      }
+      if (saved && options.closeDrawer !== false) {
         onClose();
       }
+      return saved;
     } finally {
       setIsSaving(false);
     }
@@ -174,13 +188,17 @@ export function TaskDrawer({
             value={draft.title}
             onChange={(event) => update({ title: event.target.value })}
           />
-          <Input.TextArea
-            value={draft.description}
-            autoSize={{ minRows: 4, maxRows: 8 }}
-            placeholder="Description"
-            onChange={(event) => update({ description: event.target.value || undefined })}
-          />
         </section>
+
+        <MarkdownDescriptionEditor
+          task={draft}
+          isSaving={isSaving}
+          resolveAttachmentUrl={resolveAttachmentUrl}
+          onDescriptionChange={(description) => update({ description })}
+          onTaskChange={setDraft}
+          onAttachFiles={onAttachFiles}
+          onSave={save}
+        />
 
         <section className="drawer-grid">
           <Field label="Status">
@@ -209,10 +227,26 @@ export function TaskDrawer({
             />
           </Field>
           <Field label="Assignee">
-            <Input
-              value={draft.assignee}
+            <Select
+              mode="tags"
+              maxCount={1}
+              allowClear
+              value={draft.assignee ? [draft.assignee] : []}
               placeholder="Optional"
-              onChange={(event) => update({ assignee: event.target.value || undefined })}
+              onChange={(assignees) => {
+                const nextAssignee = normalizeAssigneeName(
+                  assignees[assignees.length - 1],
+                );
+                update({ assignee: nextAssignee });
+                if (nextAssignee) {
+                  void onRegisterAssignees([nextAssignee]);
+                }
+              }}
+              options={availableAssignees.map((assignee) => ({
+                value: assignee,
+                label: assignee,
+              }))}
+              tokenSeparators={[","]}
             />
           </Field>
           <Field label="Due">

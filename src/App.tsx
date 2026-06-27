@@ -70,11 +70,13 @@ import { SquirrelIcon } from "./components/brand/SquirrelIcon";
 import { QuickCapture } from "./components/capture/QuickCapture";
 import { DashboardView } from "./components/dashboard/DashboardView";
 import { KanbanBoard } from "./components/kanban/KanbanBoard";
-import { avatarPresets } from "./components/profile/avatarPresets";
+import { getAvatarPreset } from "./components/profile/avatarPresets";
+import { AvatarCustomizer } from "./components/profile/AvatarCustomizer";
 import { UserAvatar } from "./components/profile/UserAvatar";
 import { TaskDrawer } from "./components/task/TaskDrawer";
 import { TaskList } from "./components/task/TaskList";
 import { TimelineView } from "./components/timeline/TimelineView";
+import { DEFAULT_AVATAR_CONFIG, type UserAvatarConfig } from "./domain/models/avatar";
 import {
   Attachment,
   Project,
@@ -106,6 +108,12 @@ import {
 import { parentTasks, sortTasksForDisplay } from "./utils/taskDisplay";
 import { filterTasksBySearch } from "./utils/taskSearch";
 import { filterTasksByTags } from "./utils/taskTags";
+import { renderAttachmentImageMarkdown } from "./utils/markdown";
+import {
+  isSameAssignee,
+  mergeAssignees,
+  normalizeAssigneeName,
+} from "./utils/assignees";
 import {
   EffectiveTheme,
   resolveWorkspaceTheme,
@@ -390,14 +398,39 @@ export default function App() {
       return undefined;
     }
 
+    const normalizedAssignee = normalizeAssigneeName(task.assignee);
+    const nextTask =
+      normalizedAssignee === task.assignee
+        ? task
+        : {
+            ...task,
+            assignee: normalizedAssignee,
+          };
+    const nextAssignees = normalizedAssignee
+      ? mergeAssignees(sourceState.preferences.assignees, [normalizedAssignee])
+      : sourceState.preferences.assignees;
+    const preferencesChanged =
+      nextAssignees.join("\n") !== sourceState.preferences.assignees.join("\n");
     const nextTasks = previous
-      ? sourceState.tasks.map((item) => (item.id === task.id ? task : item))
-      : [...sourceState.tasks, task];
-    const nextState = { ...sourceState, tasks: nextTasks };
+      ? sourceState.tasks.map((item) => (item.id === nextTask.id ? nextTask : item))
+      : [...sourceState.tasks, nextTask];
+    const nextState = {
+      ...sourceState,
+      preferences: preferencesChanged
+        ? {
+            ...sourceState.preferences,
+            assignees: nextAssignees,
+          }
+        : sourceState.preferences,
+      tasks: nextTasks,
+    };
     setState(nextState);
 
     try {
-      await repository.saveTask(task, nextState, previous);
+      if (preferencesChanged) {
+        await repository.savePreferences(nextState);
+      }
+      await repository.saveTask(nextTask, nextState, previous);
       return nextState;
     } catch (error) {
       setState(sourceState);
@@ -517,6 +550,7 @@ export default function App() {
       const attachment = await repository.createAttachment(updatedTask, file);
       updatedTask = appendAttachment(updatedTask, attachment);
     }
+    updatedTask = appendInlineImageMarkdown(updatedTask);
 
     const nextState = await persistTask(updatedTask);
     if (nextState) {
@@ -674,7 +708,37 @@ export default function App() {
     }
   }
 
-  async function handleSaveProfile(nickname: string, avatarPresetId?: string) {
+  async function handleRegisterAssignees(assignees: string[]) {
+    if (!state || !repository) {
+      return;
+    }
+    const nextAssignees = mergeAssignees(state.preferences.assignees, assignees);
+    if (nextAssignees.join("\n") === state.preferences.assignees.join("\n")) {
+      return;
+    }
+    const nextState = {
+      ...state,
+      preferences: {
+        ...state.preferences,
+        assignees: nextAssignees,
+      },
+    };
+    setState(nextState);
+    try {
+      await repository.savePreferences(nextState);
+    } catch (error) {
+      setState(state);
+      void message.error(
+        error instanceof Error ? error.message : "Failed to save assignees",
+      );
+    }
+  }
+
+  async function handleSaveProfile(
+    nickname: string,
+    avatarPresetId: string | undefined,
+    avatarConfig: UserAvatarConfig,
+  ) {
     if (!state || !repository) {
       return;
     }
@@ -685,6 +749,7 @@ export default function App() {
         userProfile: {
           nickname: nickname.trim() || "Local user",
           avatarPresetId,
+          avatarConfig,
         },
       },
     };
@@ -800,6 +865,10 @@ export default function App() {
     await handleRegisterTags([tag]);
   }
 
+  async function handleCreateAssignee(assignee: string) {
+    await handleRegisterAssignees([assignee]);
+  }
+
   async function handleDeleteTag(tag: string) {
     if (!state || !repository) {
       return;
@@ -833,6 +902,46 @@ export default function App() {
     } catch (error) {
       setState(state);
       void message.error(error instanceof Error ? error.message : "Failed to delete tag");
+    }
+  }
+
+  async function handleDeleteAssignee(assignee: string) {
+    if (!state || !repository) {
+      return;
+    }
+    const nextAssignees = state.preferences.assignees.filter(
+      (item) => !isSameAssignee(item, assignee),
+    );
+    const affectedTasks = state.tasks
+      .filter((task) => isSameAssignee(task.assignee, assignee))
+      .map((task) => ({
+        ...task,
+        assignee: undefined,
+        updatedAt: new Date().toISOString(),
+      }));
+    const changed = new Map(
+      affectedTasks.map((task) => [task.id, state.tasks.find((item) => item.id === task.id)!]),
+    );
+    const updatedTasks = new Map(affectedTasks.map((task) => [task.id, task]));
+    const nextState = {
+      ...state,
+      preferences: {
+        ...state.preferences,
+        assignees: nextAssignees,
+      },
+      tasks: state.tasks.map((task) => updatedTasks.get(task.id) ?? task),
+    };
+    setState(nextState);
+    try {
+      await repository.savePreferences(nextState);
+      if (affectedTasks.length > 0) {
+        await repository.saveTasks(affectedTasks, nextState, changed);
+      }
+    } catch (error) {
+      setState(state);
+      void message.error(
+        error instanceof Error ? error.message : "Failed to delete assignee",
+      );
     }
   }
 
@@ -1048,6 +1157,8 @@ export default function App() {
               onSaveTheme={handleSaveTheme}
               onCreateTag={handleCreateTag}
               onDeleteTag={handleDeleteTag}
+              onCreateAssignee={handleCreateAssignee}
+              onDeleteAssignee={handleDeleteAssignee}
             />
           ) : route === "timeline" ? (
             <TimelineView
@@ -1154,12 +1265,14 @@ export default function App() {
         subtasks={subtasks}
         projects={state.projects}
         availableTags={state.preferences.tags}
+        availableAssignees={state.preferences.assignees}
         resolveAttachmentUrl={resolveAttachmentUrl}
         onClose={() => setSelectedTaskId(undefined)}
         onSave={handleSaveTask}
         onAttachFiles={handleAttachFiles}
         onDeleteAttachment={handleDeleteAttachment}
         onRegisterTags={handleRegisterTags}
+        onRegisterAssignees={handleRegisterAssignees}
         onCreateSubtask={handleCreateSubtask}
         onPromoteSubtask={handlePromoteSubtask}
         onDeleteTask={handleDeleteTask}
@@ -1306,189 +1419,269 @@ function SettingsView({
   onSaveTheme,
   onCreateTag,
   onDeleteTag,
+  onCreateAssignee,
+  onDeleteAssignee,
 }: {
   state: WorkspaceState;
   recentWorkspaces: RecentWorkspace[];
   onSwitchWorkspace: () => Promise<void>;
   onOpenRecentWorkspace: (workspace: RecentWorkspace) => Promise<void>;
-  onSaveProfile: (nickname: string, avatarPresetId?: string) => Promise<void>;
+  onSaveProfile: (
+    nickname: string,
+    avatarPresetId: string | undefined,
+    avatarConfig: UserAvatarConfig,
+  ) => Promise<void>;
   onSaveDefaultProject: (defaultProjectId: string) => Promise<void>;
   onSaveGlobalPasteCaptureEnabled: (enabled: boolean) => Promise<void>;
   onSaveTheme: (themePreferences: WorkspaceThemePreferences) => Promise<void>;
   onCreateTag: (tag: string) => Promise<void>;
   onDeleteTag: (tag: string) => Promise<void>;
+  onCreateAssignee: (assignee: string) => Promise<void>;
+  onDeleteAssignee: (assignee: string) => Promise<void>;
 }) {
   const [nickname, setNickname] = useState(state.preferences.userProfile.nickname);
   const [avatarPresetId, setAvatarPresetId] = useState(
     state.preferences.userProfile.avatarPresetId,
   );
+  const [avatarConfig, setAvatarConfig] = useState(
+    resolveProfileAvatarConfig(state.preferences.userProfile),
+  );
   const [tagDraft, setTagDraft] = useState("");
+  const [assigneeDraft, setAssigneeDraft] = useState("");
 
   useEffect(() => {
     setNickname(state.preferences.userProfile.nickname);
     setAvatarPresetId(state.preferences.userProfile.avatarPresetId);
+    setAvatarConfig(resolveProfileAvatarConfig(state.preferences.userProfile));
   }, [state.preferences.userProfile]);
 
   return (
     <section className="settings-view">
-      <section className="settings-panel">
-        <div className="section-heading">
-          <h2>Profile</h2>
-        </div>
-        <div className="profile-settings">
-          <UserAvatar profile={{ nickname, avatarPresetId }} size={56} />
-          <Input
-            value={nickname}
-            placeholder="Nickname"
-            onChange={(event) => setNickname(event.target.value)}
-          />
-          <Button
-            type="primary"
-            onClick={() => void onSaveProfile(nickname, avatarPresetId)}
-          >
-            Save
-          </Button>
-        </div>
-        <div className="avatar-preset-grid">
-          <button
-            type="button"
-            className={`avatar-preset-item ${!avatarPresetId ? "avatar-preset-selected" : ""}`}
-            onClick={() => setAvatarPresetId(undefined)}
-          >
-            <SquirrelIcon size={42} />
-          </button>
-          {avatarPresets.map((preset) => (
-            <button
-              type="button"
-              key={preset.id}
-              className={`avatar-preset-item ${
-                avatarPresetId === preset.id ? "avatar-preset-selected" : ""
-              }`}
-              onClick={() => setAvatarPresetId(preset.id)}
+      <div className="settings-column">
+        <section className="settings-panel">
+          <div className="section-heading">
+            <h2>Profile</h2>
+          </div>
+          <div className="profile-settings">
+            <UserAvatar profile={{ nickname, avatarPresetId, avatarConfig }} size={56} />
+            <Input
+              value={nickname}
+              placeholder="Nickname"
+              onChange={(event) => setNickname(event.target.value)}
+            />
+            <Button
+              type="primary"
+              onClick={() => void onSaveProfile(nickname, avatarPresetId, avatarConfig)}
             >
-              <UserAvatar profile={{ nickname, avatarPresetId: preset.id }} size={42} />
-            </button>
-          ))}
-        </div>
-      </section>
+              Save
+            </Button>
+          </div>
+          <AvatarCustomizer
+            config={avatarConfig}
+            selectedPresetId={avatarPresetId}
+            onChange={(nextConfig, nextPresetId) => {
+              setAvatarConfig(nextConfig);
+              setAvatarPresetId(nextPresetId);
+            }}
+          />
+        </section>
 
-      <section className="settings-panel">
-        <div className="section-heading">
-          <h2>Appearance</h2>
-          <span>
-            {resolveWorkspaceTheme(state.preferences.theme) === "dark"
-              ? "Dark"
-              : "Light"}
-          </span>
-        </div>
+        <AppearanceSettingsPanel
+          themePreferences={state.preferences.theme}
+          onSaveTheme={onSaveTheme}
+        />
+
+        <section className="settings-panel">
+          <div className="section-heading">
+            <h2>Help</h2>
+          </div>
+          <Button
+            icon={<BookOpen size={16} />}
+            href={appConfig.userGuideUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            User guide
+          </Button>
+        </section>
+      </div>
+
+      <div className="settings-column">
+        <TaskMetadataSettingsPanel
+          tags={state.preferences.tags}
+          assignees={state.preferences.assignees}
+          tagDraft={tagDraft}
+          assigneeDraft={assigneeDraft}
+          onTagDraftChange={setTagDraft}
+          onAssigneeDraftChange={setAssigneeDraft}
+          onCreateTag={onCreateTag}
+          onDeleteTag={onDeleteTag}
+          onCreateAssignee={onCreateAssignee}
+          onDeleteAssignee={onDeleteAssignee}
+        />
+
+        <WorkspaceSettingsPanel
+          state={state}
+          recentWorkspaces={recentWorkspaces}
+          onSwitchWorkspace={onSwitchWorkspace}
+          onOpenRecentWorkspace={onOpenRecentWorkspace}
+          onSaveDefaultProject={onSaveDefaultProject}
+          onSaveGlobalPasteCaptureEnabled={onSaveGlobalPasteCaptureEnabled}
+        />
+      </div>
+    </section>
+  );
+}
+
+function AppearanceSettingsPanel({
+  themePreferences,
+  onSaveTheme,
+}: {
+  themePreferences: WorkspaceThemePreferences;
+  onSaveTheme: (themePreferences: WorkspaceThemePreferences) => Promise<void>;
+}) {
+  return (
+    <section className="settings-panel">
+      <div className="section-heading">
+        <h2>Appearance</h2>
+        <span>{resolveWorkspaceTheme(themePreferences) === "dark" ? "Dark" : "Light"}</span>
+      </div>
+      <div className="settings-field">
+        <span>Mode</span>
+        <Segmented
+          value={themePreferences.mode}
+          onChange={(mode) =>
+            void onSaveTheme({
+              ...themePreferences,
+              mode: mode as WorkspaceThemePreferences["mode"],
+            })
+          }
+          options={[
+            {
+              value: "light",
+              label: (
+                <span className="segmented-icon-label">
+                  <Sun size={14} />
+                  Light
+                </span>
+              ),
+            },
+            {
+              value: "dark",
+              label: (
+                <span className="segmented-icon-label">
+                  <Moon size={14} />
+                  Dark
+                </span>
+              ),
+            },
+            {
+              value: "auto",
+              label: (
+                <span className="segmented-icon-label">
+                  <Clock3 size={14} />
+                  Auto
+                </span>
+              ),
+            },
+          ]}
+        />
+      </div>
+      <div className="settings-time-grid">
         <div className="settings-field">
-          <span>Mode</span>
-          <Segmented
-            value={state.preferences.theme.mode}
-            onChange={(mode) =>
+          <span>Dark start</span>
+          <TimePicker
+            className="full-width-control"
+            format={CLOCK_TIME_FORMAT}
+            minuteStep={15}
+            value={clockTimeValue(themePreferences.darkStart)}
+            disabled={themePreferences.mode !== "auto"}
+            onChange={(time) =>
               void onSaveTheme({
-                ...state.preferences.theme,
-                mode: mode as WorkspaceThemePreferences["mode"],
+                ...themePreferences,
+                darkStart: time ? time.format(CLOCK_TIME_FORMAT) : themePreferences.darkStart,
               })
             }
-            options={[
-              {
-                value: "light",
-                label: (
-                  <span className="segmented-icon-label">
-                    <Sun size={14} />
-                    Light
-                  </span>
-                ),
-              },
-              {
-                value: "dark",
-                label: (
-                  <span className="segmented-icon-label">
-                    <Moon size={14} />
-                    Dark
-                  </span>
-                ),
-              },
-              {
-                value: "auto",
-                label: (
-                  <span className="segmented-icon-label">
-                    <Clock3 size={14} />
-                    Auto
-                  </span>
-                ),
-              },
-            ]}
           />
         </div>
-        <div className="settings-time-grid">
-          <div className="settings-field">
-            <span>Dark start</span>
-            <TimePicker
-              className="full-width-control"
-              format={CLOCK_TIME_FORMAT}
-              minuteStep={15}
-              value={clockTimeValue(state.preferences.theme.darkStart)}
-              disabled={state.preferences.theme.mode !== "auto"}
-              onChange={(time) =>
-                void onSaveTheme({
-                  ...state.preferences.theme,
-                  darkStart: time
-                    ? time.format(CLOCK_TIME_FORMAT)
-                    : state.preferences.theme.darkStart,
-                })
-              }
-            />
-          </div>
-          <div className="settings-field">
-            <span>Dark end</span>
-            <TimePicker
-              className="full-width-control"
-              format={CLOCK_TIME_FORMAT}
-              minuteStep={15}
-              value={clockTimeValue(state.preferences.theme.darkEnd)}
-              disabled={state.preferences.theme.mode !== "auto"}
-              onChange={(time) =>
-                void onSaveTheme({
-                  ...state.preferences.theme,
-                  darkEnd: time
-                    ? time.format(CLOCK_TIME_FORMAT)
-                    : state.preferences.theme.darkEnd,
-                })
-              }
-            />
-          </div>
+        <div className="settings-field">
+          <span>Dark end</span>
+          <TimePicker
+            className="full-width-control"
+            format={CLOCK_TIME_FORMAT}
+            minuteStep={15}
+            value={clockTimeValue(themePreferences.darkEnd)}
+            disabled={themePreferences.mode !== "auto"}
+            onChange={(time) =>
+              void onSaveTheme({
+                ...themePreferences,
+                darkEnd: time ? time.format(CLOCK_TIME_FORMAT) : themePreferences.darkEnd,
+              })
+            }
+          />
         </div>
-      </section>
+      </div>
+    </section>
+  );
+}
 
-      <section className="settings-panel">
-        <div className="section-heading">
-          <h2>Tags</h2>
-          <span>{state.preferences.tags.length}</span>
+function TaskMetadataSettingsPanel({
+  tags,
+  assignees,
+  tagDraft,
+  assigneeDraft,
+  onTagDraftChange,
+  onAssigneeDraftChange,
+  onCreateTag,
+  onDeleteTag,
+  onCreateAssignee,
+  onDeleteAssignee,
+}: {
+  tags: string[];
+  assignees: string[];
+  tagDraft: string;
+  assigneeDraft: string;
+  onTagDraftChange: (draft: string) => void;
+  onAssigneeDraftChange: (draft: string) => void;
+  onCreateTag: (tag: string) => Promise<void>;
+  onDeleteTag: (tag: string) => Promise<void>;
+  onCreateAssignee: (assignee: string) => Promise<void>;
+  onDeleteAssignee: (assignee: string) => Promise<void>;
+}) {
+  return (
+    <section className="settings-panel">
+      <div className="section-heading">
+        <h2>Task metadata</h2>
+      </div>
+      <div className="settings-subsection">
+        <div className="settings-subsection-heading">
+          <span>Tags</span>
+          <strong>{tags.length}</strong>
         </div>
-        <div className="tag-manager-create">
+        <div className="settings-token-create">
           <Input
             value={tagDraft}
             placeholder="New tag"
-            onChange={(event) => setTagDraft(event.target.value)}
+            onChange={(event) => onTagDraftChange(event.target.value)}
             onPressEnter={() => {
               if (tagDraft.trim()) {
-                void onCreateTag(tagDraft.trim()).then(() => setTagDraft(""));
+                void onCreateTag(tagDraft.trim()).then(() => onTagDraftChange(""));
               }
             }}
           />
           <Button
             icon={<Plus size={16} />}
             disabled={!tagDraft.trim()}
+            title="Add tag"
+            aria-label="Add tag"
             onClick={() =>
-              void onCreateTag(tagDraft.trim()).then(() => setTagDraft(""))
+              void onCreateTag(tagDraft.trim()).then(() => onTagDraftChange(""))
             }
           />
         </div>
-        <div className="tag-manager-list">
-          {state.preferences.tags.map((tag) => (
-            <span className="tag-manager-item" key={tag}>
+        <div className="settings-token-list">
+          {tags.map((tag) => (
+            <span className="settings-token-item" key={tag}>
               {tag}
               <Popconfirm
                 title="Delete tag?"
@@ -1497,97 +1690,170 @@ function SettingsView({
                 okButtonProps={{ danger: true }}
                 onConfirm={() => void onDeleteTag(tag)}
               >
-                <Button type="text" icon={<Trash2 size={14} />} />
+                <Button
+                  type="text"
+                  icon={<Trash2 size={14} />}
+                  title="Delete tag"
+                  aria-label={`Delete ${tag}`}
+                />
               </Popconfirm>
             </span>
           ))}
-          {state.preferences.tags.length === 0 ? (
-            <span className="empty-line">No tags</span>
+          {tags.length === 0 ? <span className="empty-line">No tags</span> : null}
+        </div>
+      </div>
+
+      <div className="settings-subsection">
+        <div className="settings-subsection-heading">
+          <span>Assignees</span>
+          <strong>{assignees.length}</strong>
+        </div>
+        <div className="settings-token-create">
+          <Input
+            value={assigneeDraft}
+            placeholder="New assignee"
+            onChange={(event) => onAssigneeDraftChange(event.target.value)}
+            onPressEnter={() => {
+              if (assigneeDraft.trim()) {
+                void onCreateAssignee(assigneeDraft.trim()).then(() =>
+                  onAssigneeDraftChange(""),
+                );
+              }
+            }}
+          />
+          <Button
+            icon={<Plus size={16} />}
+            disabled={!assigneeDraft.trim()}
+            title="Add assignee"
+            aria-label="Add assignee"
+            onClick={() =>
+              void onCreateAssignee(assigneeDraft.trim()).then(() =>
+                onAssigneeDraftChange(""),
+              )
+            }
+          />
+        </div>
+        <div className="settings-token-list">
+          {assignees.map((assignee) => (
+            <span className="settings-token-item" key={assignee}>
+              {assignee}
+              <Popconfirm
+                title="Delete assignee?"
+                description="This clears the assignee from saved tasks."
+                okText="Delete"
+                okButtonProps={{ danger: true }}
+                onConfirm={() => void onDeleteAssignee(assignee)}
+              >
+                <Button
+                  type="text"
+                  icon={<Trash2 size={14} />}
+                  title="Delete assignee"
+                  aria-label={`Delete ${assignee}`}
+                />
+              </Popconfirm>
+            </span>
+          ))}
+          {assignees.length === 0 ? (
+            <span className="empty-line">No assignees</span>
           ) : null}
         </div>
-      </section>
-
-      <section className="settings-panel">
-        <div className="section-heading">
-          <h2>Workspace</h2>
-        </div>
-        <Button icon={<Repeat2 size={16} />} onClick={() => void onSwitchWorkspace()}>
-          Switch workspace
-        </Button>
-        <div className="settings-row">
-          <span>Paste to create task</span>
-          <Switch
-            checked={state.preferences.globalPasteCaptureEnabled}
-            onChange={(checked) => void onSaveGlobalPasteCaptureEnabled(checked)}
-          />
-        </div>
-        <div className="settings-field">
-          <span>Default project</span>
-          <Select
-            value={state.preferences.defaultProjectId}
-            placeholder="Select project"
-            onChange={(projectId) => void onSaveDefaultProject(projectId)}
-            options={state.projects
-              .filter((project) => project.status !== "archived")
-              .sort((a, b) => a.sortOrder - b.sortOrder)
-              .map((project) => ({
-                value: project.id,
-                label: project.name,
-              }))}
-          />
-        </div>
-        <div className="settings-row">
-          <span>Workspace</span>
-          <strong>{state.workspace.name}</strong>
-        </div>
-        <div className="settings-row">
-          <span>Schema</span>
-          <strong>v{state.workspace.schemaVersion}</strong>
-        </div>
-        <div className="settings-row">
-          <span>Projects</span>
-          <strong>{state.projects.length}</strong>
-        </div>
-        <div className="settings-row">
-          <span>Tasks</span>
-          <strong>{state.tasks.length}</strong>
-        </div>
-        <div className="settings-row">
-          <span>Markdown mirror</span>
-          <strong>{state.preferences.markdownExportEnabled ? "On" : "Off"}</strong>
-        </div>
-        {recentWorkspaces.length > 0 ? (
-          <div className="settings-recent-list">
-            <span>Recent workspaces</span>
-            {recentWorkspaces.map((workspace) => (
-              <button
-                type="button"
-                key={workspace.id}
-                className="recent-workspace-button"
-                onClick={() => void onOpenRecentWorkspace(workspace)}
-              >
-                <strong>{workspace.name}</strong>
-                <small>{formatRecentDate(workspace.lastOpenedAt)}</small>
-              </button>
-            ))}
-          </div>
-        ) : null}
-      </section>
-
-      <section className="settings-panel">
-        <div className="section-heading">
-          <h2>Help</h2>
-        </div>
-        <Button
-          icon={<BookOpen size={16} />}
-          href={appConfig.userGuideUrl}
-          target="_blank"
-          rel="noreferrer"
-        >
-          User guide
-        </Button>
-      </section>
+      </div>
     </section>
+  );
+}
+
+function WorkspaceSettingsPanel({
+  state,
+  recentWorkspaces,
+  onSwitchWorkspace,
+  onOpenRecentWorkspace,
+  onSaveDefaultProject,
+  onSaveGlobalPasteCaptureEnabled,
+}: {
+  state: WorkspaceState;
+  recentWorkspaces: RecentWorkspace[];
+  onSwitchWorkspace: () => Promise<void>;
+  onOpenRecentWorkspace: (workspace: RecentWorkspace) => Promise<void>;
+  onSaveDefaultProject: (defaultProjectId: string) => Promise<void>;
+  onSaveGlobalPasteCaptureEnabled: (enabled: boolean) => Promise<void>;
+}) {
+  return (
+    <section className="settings-panel">
+      <div className="section-heading">
+        <h2>Workspace</h2>
+      </div>
+      <Button icon={<Repeat2 size={16} />} onClick={() => void onSwitchWorkspace()}>
+        Switch workspace
+      </Button>
+      <div className="settings-row">
+        <span>Paste to create task</span>
+        <Switch
+          checked={state.preferences.globalPasteCaptureEnabled}
+          onChange={(checked) => void onSaveGlobalPasteCaptureEnabled(checked)}
+        />
+      </div>
+      <div className="settings-field">
+        <span>Default project</span>
+        <Select
+          value={state.preferences.defaultProjectId}
+          placeholder="Select project"
+          onChange={(projectId) => void onSaveDefaultProject(projectId)}
+          options={state.projects
+            .filter((project) => project.status !== "archived")
+            .sort((a, b) => a.sortOrder - b.sortOrder)
+            .map((project) => ({
+              value: project.id,
+              label: project.name,
+            }))}
+        />
+      </div>
+      <div className="settings-row">
+        <span>Workspace</span>
+        <strong>{state.workspace.name}</strong>
+      </div>
+      <div className="settings-row">
+        <span>Schema</span>
+        <strong>v{state.workspace.schemaVersion}</strong>
+      </div>
+      <div className="settings-row">
+        <span>Projects</span>
+        <strong>{state.projects.length}</strong>
+      </div>
+      <div className="settings-row">
+        <span>Tasks</span>
+        <strong>{state.tasks.length}</strong>
+      </div>
+      <div className="settings-row">
+        <span>Markdown mirror</span>
+        <strong>{state.preferences.markdownExportEnabled ? "On" : "Off"}</strong>
+      </div>
+      {recentWorkspaces.length > 0 ? (
+        <div className="settings-recent-list">
+          <span>Recent workspaces</span>
+          {recentWorkspaces.map((workspace) => (
+            <button
+              type="button"
+              key={workspace.id}
+              className="recent-workspace-button"
+              onClick={() => void onOpenRecentWorkspace(workspace)}
+            >
+              <strong>{workspace.name}</strong>
+              <small>{formatRecentDate(workspace.lastOpenedAt)}</small>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function resolveProfileAvatarConfig(
+  profile: WorkspaceState["preferences"]["userProfile"],
+): UserAvatarConfig {
+  return (
+    profile.avatarConfig ??
+    getAvatarPreset(profile.avatarPresetId)?.config ??
+    DEFAULT_AVATAR_CONFIG
   );
 }
 
@@ -1801,12 +2067,31 @@ function createClipboardTaskContent(
   };
 }
 
+function appendInlineImageMarkdown(task: Task): Task {
+  const imageMarkdown = task.attachments
+    .filter((attachment) => attachment.type === "image")
+    .map(renderAttachmentImageMarkdown)
+    .join("\n\n");
+
+  if (!imageMarkdown) {
+    return task;
+  }
+
+  return {
+    ...task,
+    description: [task.description, imageMarkdown].filter(Boolean).join("\n\n"),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 function isEditablePasteTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) {
     return false;
   }
 
-  const editable = target.closest("input, textarea, [contenteditable]");
+  const editable = target.closest(
+    "input, textarea, [contenteditable], [data-global-paste-ignore]",
+  );
   if (!(editable instanceof HTMLElement)) {
     return false;
   }

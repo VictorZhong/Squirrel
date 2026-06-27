@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { avatarPresets } from "./avatarPresets";
+import { avatarPresets, profileAvatarPresets } from "./avatarPresets";
 
 describe("avatarPresets", () => {
   it("provides exactly 21 unique selectable avatars", () => {
@@ -11,5 +11,11 @@ describe("avatarPresets", () => {
     expect(avatarPresets).toHaveLength(21);
     expect(ids.size).toBe(21);
     expect(configs.size).toBe(21);
+  });
+
+  it("provides four man and four woman profile presets", () => {
+    expect(profileAvatarPresets).toHaveLength(8);
+    expect(profileAvatarPresets.filter((preset) => preset.config.sex === "man")).toHaveLength(4);
+    expect(profileAvatarPresets.filter((preset) => preset.config.sex === "woman")).toHaveLength(4);
   });
 });

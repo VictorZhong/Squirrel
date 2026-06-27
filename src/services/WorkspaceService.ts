@@ -8,6 +8,7 @@ import {
 import { createProject } from "../domain/rules/taskRules";
 import { createId } from "../utils/id";
 import { randomProjectColor } from "../domain/models/projectColors";
+import { DEFAULT_AVATAR_CONFIG } from "../domain/models/avatar";
 
 export const WORKSPACE_STRUCTURE_PATHS = [
   "projects",
@@ -49,8 +50,10 @@ export function createDefaultPreferences(): WorkspacePreferences {
     },
     userProfile: {
       nickname: "Local user",
+      avatarConfig: DEFAULT_AVATAR_CONFIG,
     },
     tags: [],
+    assignees: [],
   };
 }
 

@@ -1,3 +1,5 @@
+import type { UserAvatarConfig } from "./avatar";
+
 export const SCHEMA_VERSION = 2;
 
 export type ProjectStatus = "active" | "paused" | "completed" | "archived";
@@ -92,6 +94,7 @@ export interface Task {
 export interface UserProfile {
   nickname: string;
   avatarPresetId?: string;
+  avatarConfig?: UserAvatarConfig;
 }
 
 export interface WorkspacePreferences {
@@ -108,6 +111,7 @@ export interface WorkspacePreferences {
   theme: WorkspaceThemePreferences;
   userProfile: UserProfile;
   tags: string[];
+  assignees: string[];
 }
 
 export interface RecentWorkspace {

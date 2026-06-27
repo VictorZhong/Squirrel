@@ -9,6 +9,11 @@ import {
   WorkspacePreferences,
   WorkspaceThemePreferences,
 } from "../domain/models/types";
+import {
+  DEFAULT_AVATAR_CONFIG,
+  type UserAvatarConfig,
+} from "../domain/models/avatar";
+import { normalizeAssigneeList } from "../utils/assignees";
 import { createDefaultPreferences } from "./WorkspaceService";
 
 export function serializeJson(value: unknown): string {
@@ -40,16 +45,13 @@ export function parsePreferences(value: unknown): WorkspacePreferences {
         ? (value.defaultView as WorkspacePreferences["defaultView"])
         : defaults.defaultView,
     defaultProjectId: optionalString(value.defaultProjectId),
-    userProfile:
-      isRecord(value.userProfile) && typeof value.userProfile.nickname === "string"
-        ? {
-            nickname: value.userProfile.nickname,
-            avatarPresetId: optionalString(value.userProfile.avatarPresetId),
-          }
-        : defaults.userProfile,
+    userProfile: parseUserProfile(value.userProfile, defaults.userProfile),
     tags: Array.isArray(value.tags)
       ? normalizeTags(value.tags.map(String))
       : defaults.tags,
+    assignees: Array.isArray(value.assignees)
+      ? normalizeAssigneeList(value.assignees.map(String))
+      : defaults.assignees,
     boardColumns: parseBoardColumns(value.boardColumns, defaults.boardColumns),
     dueSoonDays: optionalNumber(value.dueSoonDays) ?? defaults.dueSoonDays,
     autoArchiveDoneAfterDays:
@@ -73,6 +75,94 @@ export function parsePreferences(value: unknown): WorkspacePreferences {
         : defaults.taskSortMode,
     theme: parseWorkspaceTheme(value.theme, defaults.theme),
   };
+}
+
+function parseUserProfile(
+  value: unknown,
+  defaults: WorkspacePreferences["userProfile"],
+): WorkspacePreferences["userProfile"] {
+  if (!isRecord(value) || typeof value.nickname !== "string") {
+    return defaults;
+  }
+
+  const avatarPresetId = optionalString(value.avatarPresetId);
+  const avatarConfig = parseAvatarConfig(value.avatarConfig);
+
+  return {
+    nickname: value.nickname,
+    avatarPresetId,
+    avatarConfig:
+      avatarConfig ?? (avatarPresetId ? undefined : defaults.avatarConfig),
+  };
+}
+
+function parseAvatarConfig(value: unknown): UserAvatarConfig | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const avatarConfig: UserAvatarConfig = {
+    ...DEFAULT_AVATAR_CONFIG,
+    sex: parseEnum(value.sex, ["man", "woman"], DEFAULT_AVATAR_CONFIG.sex),
+    faceColor: parseColor(value.faceColor, DEFAULT_AVATAR_CONFIG.faceColor),
+    earSize: parseEnum(value.earSize, ["small", "big"], DEFAULT_AVATAR_CONFIG.earSize),
+    hairColor: parseColor(value.hairColor, DEFAULT_AVATAR_CONFIG.hairColor),
+    hairStyle: parseEnum(
+      value.hairStyle,
+      ["normal", "thick", "mohawk", "womanLong", "womanShort"],
+      DEFAULT_AVATAR_CONFIG.hairStyle,
+    ),
+    hairColorRandom:
+      typeof value.hairColorRandom === "boolean" ? value.hairColorRandom : undefined,
+    hatColor: parseColor(value.hatColor, DEFAULT_AVATAR_CONFIG.hatColor),
+    hatStyle: parseEnum(
+      value.hatStyle,
+      ["beanie", "turban", "none"],
+      DEFAULT_AVATAR_CONFIG.hatStyle,
+    ),
+    eyeStyle: parseEnum(
+      value.eyeStyle,
+      ["circle", "oval", "smile"],
+      DEFAULT_AVATAR_CONFIG.eyeStyle,
+    ),
+    eyeBrowStyle: parseEnum(
+      value.eyeBrowStyle,
+      ["up", "upWoman"],
+      DEFAULT_AVATAR_CONFIG.eyeBrowStyle,
+    ),
+    glassesStyle: parseEnum(
+      value.glassesStyle,
+      ["round", "square", "none"],
+      DEFAULT_AVATAR_CONFIG.glassesStyle,
+    ),
+    noseStyle: parseEnum(
+      value.noseStyle,
+      ["short", "long", "round"],
+      DEFAULT_AVATAR_CONFIG.noseStyle,
+    ),
+    mouthStyle: parseEnum(
+      value.mouthStyle,
+      ["laugh", "smile", "peace"],
+      DEFAULT_AVATAR_CONFIG.mouthStyle,
+    ),
+    shirtStyle: parseEnum(
+      value.shirtStyle,
+      ["hoody", "short", "polo"],
+      DEFAULT_AVATAR_CONFIG.shirtStyle,
+    ),
+    shirtColor: parseColor(value.shirtColor, DEFAULT_AVATAR_CONFIG.shirtColor),
+    bgColor: parseColor(value.bgColor, DEFAULT_AVATAR_CONFIG.bgColor),
+  };
+
+  if (typeof value.hairColorRandom === "boolean") {
+    avatarConfig.hairColorRandom = value.hairColorRandom;
+  }
+
+  if (typeof value.isGradient === "boolean") {
+    avatarConfig.isGradient = value.isGradient;
+  }
+
+  return avatarConfig;
 }
 
 export function parseProject(value: unknown): Project {
@@ -223,6 +313,22 @@ function optionalString(value: unknown): string | undefined {
 
 function optionalNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function parseEnum<T extends string>(
+  value: unknown,
+  allowed: readonly T[],
+  fallback: T | undefined,
+): T | undefined {
+  return allowed.includes(value as T) ? (value as T) : fallback;
+}
+
+function parseColor(value: unknown, fallback: string | undefined): string | undefined {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+
+  return /^#[0-9a-f]{3}([0-9a-f]{3})?$/i.test(value) ? value : fallback;
 }
 
 function normalizeTags(tags: string[]): string[] {

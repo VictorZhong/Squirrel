@@ -4,6 +4,7 @@ import {
   createDefaultPreferences,
   createInitialWorkspaceState,
 } from "./WorkspaceService";
+import { DEFAULT_AVATAR_CONFIG } from "../domain/models/avatar";
 import { PROJECT_COLOR_VALUES } from "../domain/models/projectColors";
 
 describe("WorkspaceService", () => {
@@ -47,11 +48,13 @@ describe("WorkspaceService", () => {
     });
   });
 
-  it("creates profile and tag defaults", () => {
+  it("creates profile, tag, and assignee defaults", () => {
     const preferences = createDefaultPreferences();
 
     expect(preferences.userProfile.nickname).toBe("Local user");
     expect(preferences.userProfile.avatarPresetId).toBeUndefined();
+    expect(preferences.userProfile.avatarConfig).toEqual(DEFAULT_AVATAR_CONFIG);
     expect(preferences.tags).toEqual([]);
+    expect(preferences.assignees).toEqual([]);
   });
 });

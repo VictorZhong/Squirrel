@@ -428,6 +428,8 @@ export const avatarPresets: AvatarPreset[] = [
   },
 ];
 
+export const profileAvatarPresets = avatarPresets.slice(0, 8);
+
 export function getAvatarPreset(id?: string): AvatarPreset | undefined {
   return avatarPresets.find((preset) => preset.id === id);
 }

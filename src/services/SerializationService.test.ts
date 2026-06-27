@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createTask } from "../domain/rules/taskRules";
+import { DEFAULT_AVATAR_CONFIG } from "../domain/models/avatar";
 import { parsePreferences, parseTask, serializeJson } from "./SerializationService";
 
 describe("SerializationService", () => {
@@ -97,5 +98,45 @@ describe("SerializationService", () => {
     expect(
       parsePreferences({ globalPasteCaptureEnabled: false }).globalPasteCaptureEnabled,
     ).toBe(false);
+  });
+
+  it("parses saved assignees defensively", () => {
+    const preferences = parsePreferences({
+      assignees: [" Victor ", "victor", "", "Alice"],
+    });
+
+    expect(preferences.assignees).toEqual(["Alice", "Victor"]);
+  });
+
+  it("parses saved avatar config defensively", () => {
+    const preferences = parsePreferences({
+      userProfile: {
+        nickname: "Victor",
+        avatarConfig: {
+          ...DEFAULT_AVATAR_CONFIG,
+          sex: "man",
+          hairStyle: "thick",
+          faceColor: "bad",
+        },
+      },
+    });
+
+    expect(preferences.userProfile.avatarConfig).toEqual({
+      ...DEFAULT_AVATAR_CONFIG,
+      sex: "man",
+      hairStyle: "thick",
+    });
+  });
+
+  it("keeps legacy avatar preset ids when no custom avatar config exists", () => {
+    const preferences = parsePreferences({
+      userProfile: {
+        nickname: "Victor",
+        avatarPresetId: "walnut-normal",
+      },
+    });
+
+    expect(preferences.userProfile.avatarPresetId).toBe("walnut-normal");
+    expect(preferences.userProfile.avatarConfig).toBeUndefined();
   });
 });
