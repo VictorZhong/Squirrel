@@ -1316,6 +1316,13 @@ textarea {
   align-items: center;
 }
 
+.profile-settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .avatar-customizer {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 144px;
@@ -1954,8 +1961,12 @@ textarea {
     grid-template-columns: 56px minmax(0, 1fr);
   }
 
-  .profile-settings .ant-btn {
+  .profile-settings-actions {
     grid-column: 2;
+    justify-content: flex-start;
+  }
+
+  .profile-settings-actions .ant-btn {
     justify-self: start;
   }
 

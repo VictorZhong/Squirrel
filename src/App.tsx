@@ -53,6 +53,7 @@ import {
   Pencil,
   Plus,
   Repeat2,
+  Save,
   Search,
   Settings,
   ShieldCheck,
@@ -1580,14 +1581,41 @@ function SettingsView({
   const [avatarConfig, setAvatarConfig] = useState(
     resolveProfileAvatarConfig(state.preferences.userProfile),
   );
+  const [avatarDialogOpen, setAvatarDialogOpen] = useState(false);
+  const [avatarDraftPresetId, setAvatarDraftPresetId] = useState(
+    state.preferences.userProfile.avatarPresetId,
+  );
+  const [avatarDraftConfig, setAvatarDraftConfig] = useState(
+    resolveProfileAvatarConfig(state.preferences.userProfile),
+  );
   const [tagDraft, setTagDraft] = useState("");
   const [assigneeDraft, setAssigneeDraft] = useState("");
 
   useEffect(() => {
     setNickname(state.preferences.userProfile.nickname);
     setAvatarPresetId(state.preferences.userProfile.avatarPresetId);
-    setAvatarConfig(resolveProfileAvatarConfig(state.preferences.userProfile));
+    const nextAvatarConfig = resolveProfileAvatarConfig(state.preferences.userProfile);
+    setAvatarConfig(nextAvatarConfig);
+    setAvatarDraftPresetId(state.preferences.userProfile.avatarPresetId);
+    setAvatarDraftConfig(nextAvatarConfig);
   }, [state.preferences.userProfile]);
+
+  function openAvatarDialog() {
+    setAvatarDraftPresetId(avatarPresetId);
+    setAvatarDraftConfig(avatarConfig);
+    setAvatarDialogOpen(true);
+  }
+
+  function closeAvatarDialog() {
+    setAvatarDraftPresetId(avatarPresetId);
+    setAvatarDraftConfig(avatarConfig);
+    setAvatarDialogOpen(false);
+  }
+
+  async function saveAvatar() {
+    await onSaveProfile(nickname, avatarDraftPresetId, avatarDraftConfig);
+    setAvatarDialogOpen(false);
+  }
 
   return (
     <section className="settings-view">
@@ -1603,21 +1631,36 @@ function SettingsView({
               placeholder="Nickname"
               onChange={(event) => setNickname(event.target.value)}
             />
-            <Button
-              type="primary"
-              onClick={() => void onSaveProfile(nickname, avatarPresetId, avatarConfig)}
-            >
-              Save
-            </Button>
+            <div className="profile-settings-actions">
+              <Button icon={<Pencil size={16} />} onClick={openAvatarDialog}>
+                Change avatar
+              </Button>
+              <Button
+                type="primary"
+                icon={<Save size={16} />}
+                onClick={() => void onSaveProfile(nickname, avatarPresetId, avatarConfig)}
+              >
+                Save
+              </Button>
+            </div>
           </div>
-          <AvatarCustomizer
-            config={avatarConfig}
-            selectedPresetId={avatarPresetId}
-            onChange={(nextConfig, nextPresetId) => {
-              setAvatarConfig(nextConfig);
-              setAvatarPresetId(nextPresetId);
-            }}
-          />
+          <Modal
+            title="Change Avatar"
+            open={avatarDialogOpen}
+            width={760}
+            okText="Save avatar"
+            onCancel={closeAvatarDialog}
+            onOk={() => void saveAvatar()}
+          >
+            <AvatarCustomizer
+              config={avatarDraftConfig}
+              selectedPresetId={avatarDraftPresetId}
+              onChange={(nextConfig, nextPresetId) => {
+                setAvatarDraftConfig(nextConfig);
+                setAvatarDraftPresetId(nextPresetId);
+              }}
+            />
+          </Modal>
         </section>
 
         <AppearanceSettingsPanel
